@@ -115,7 +115,7 @@ class WebsiteAnalyzer:
             
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), 
-                timeout=90
+                timeout=300
             )
             
             if process.returncode == 0:
