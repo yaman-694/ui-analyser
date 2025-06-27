@@ -1,0 +1,39 @@
+/**
+ * HTTP status codes used in the application.
+ * @enum {number}
+ */
+export const HTTP_STATUS_CODE = {
+	OK: 200,
+	CREATED: 201,
+	ACCEPTED: 202,
+	NO_CONTENT: 204,
+	FOUND: 302,
+	BAD_REQUEST: 400,
+	UNAUTHORIZED: 401,
+	PAYMENT_REQUIRED: 402,
+	FORBIDDEN: 403,
+	NOT_FOUND: 404,
+	METHOD_NOT_ALLOWED: 405,
+	CONTENT_TOO_LARGE: 413,
+	TOO_MANY_REQUESTS: 429,
+	INTERNAL_SERVER_ERROR: 500,
+	SERVICE_UNAVAILABLE: 503,
+	GATEWAY_TIMEOUT: 504
+};
+
+export const BASE_SUBSCRIPTION_PLAN = {
+	id: process.env.BASE_SUBSCRIPTION_PRICE_ID,
+	credit: 20
+}
+export const PLUS_SUBSCRIPTION_PLAN = {
+	id: process.env.PLUS_SUBSCRIPTION_PRICE_ID,
+	credit: 50
+}
+
+
+export const STRIPE = {
+	webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+	apiKey: process.env.STRIPE_SECRET_KEY,
+	baseSubscriptionPlan: BASE_SUBSCRIPTION_PLAN,
+	plusSubscriptionPlan: PLUS_SUBSCRIPTION_PLAN
+}
