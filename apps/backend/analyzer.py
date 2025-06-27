@@ -1,13 +1,12 @@
 import os
 import asyncio
-import base64
 import json
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from config import default_config
+from ai_analyzer import AIScreenshotAnalyzer
 
 load_dotenv()
 
@@ -15,7 +14,7 @@ class ChromiumPool:
     def __init__(self, max_browsers=4, max_tabs_per_browser=8):
         self.max_browsers = max_browsers
         self.max_tabs_per_browser = max_tabs_per_browser
-        self.browsers = []  # List of (browser, [pages])
+        self.browsers = []
         self.lock = asyncio.Lock()
         self.playwright = None
 
@@ -77,24 +76,25 @@ class ChromiumPool:
                 self.playwright = None
 
 class WebsiteAnalyzer:
-    def __init__(self, save_screenshots=False, chromium_pool=None):
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        if not self.openai_key:
-            raise ValueError("OPENAI_API_KEY not found in .env file")
-
+    def __init__(self, save_screenshots=False, chromium_pool=None, config=None):
+        self.config = config or default_config
+        self.config.validate()  # Validate configuration on startup
+        
         self.save_screenshots = save_screenshots
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            openai_api_key=self.openai_key,
-            max_tokens=1500,
-            temperature=0.0,  # Completely deterministic
-            seed=12345,  # Fixed seed for consistency
-        )
         self.chromium_pool = chromium_pool
+        
+        # Initialize AI analyzer
+        self.ai_analyzer = AIScreenshotAnalyzer(self.config)
 
     async def get_lighthouse_metrics(self, url):
         """Get Lighthouse performance metrics using Docker"""
         print("⚡ Running Lighthouse analysis...")
+        
+        # Ensure Docker is running
+        if not await self._ensure_docker_running():
+            print("⚠️  Lighthouse analysis skipped - Docker unavailable")
+            return {"available": False}
+        
         try:
             # Run Lighthouse audit via Docker
             result = await self._run_lighthouse_audit(url)
@@ -162,8 +162,7 @@ class WebsiteAnalyzer:
         try:
             # Build Docker command for Lighthouse audit
             cmd = [
-                "docker", "run", "--rm", 
-                "--platform=linux/amd64",  # Platform compatibility for M1 Macs
+                "docker", "run", "--rm",
                 "femtopixel/google-lighthouse",
                 "lighthouse", url,
                 "--only-categories=performance",
@@ -181,7 +180,7 @@ class WebsiteAnalyzer:
             
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), 
-                timeout=300
+                timeout=self.config.lighthouse_timeout
             )
             
             if process.returncode == 0:
@@ -207,7 +206,7 @@ class WebsiteAnalyzer:
                 return None
                 
         except asyncio.TimeoutError:
-            print(f"❌ Lighthouse audit timed out after 90 seconds")
+            print(f"❌ Lighthouse audit timed out after {self.config.lighthouse_timeout} seconds")
             return None
         except json.JSONDecodeError as e:
             print(f"❌ Failed to parse Lighthouse JSON output: {e}")
@@ -231,9 +230,9 @@ class WebsiteAnalyzer:
         browser, desktop_page = await self.chromium_pool.acquire()
         try:
             print("📱 Taking desktop screenshot...")
-            await desktop_page.set_viewport_size({"width": 1920, "height": 1080})
+            await desktop_page.set_viewport_size(self.config.desktop_viewport)
             start_time = datetime.now()
-            await desktop_page.goto(url, wait_until="networkidle", timeout=30000)
+            await desktop_page.goto(url, wait_until="networkidle", timeout=self.config.screenshot_timeout)
             end_time = datetime.now()
             load_time = (end_time - start_time).total_seconds()
             await desktop_page.screenshot(path=desktop_screenshot, full_page=True)
@@ -243,15 +242,15 @@ class WebsiteAnalyzer:
         browser, mobile_page = await self.chromium_pool.acquire()
         try:
             print("📱 Taking mobile screenshot...")
-            await mobile_page.set_viewport_size({"width": 375, "height": 667})
-            await mobile_page.set_extra_http_headers({"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)"})
-            await mobile_page.goto(url, wait_until="networkidle")
+            await mobile_page.set_viewport_size(self.config.mobile_viewport)
+            await mobile_page.set_extra_http_headers({"User-Agent": self.config.mobile_user_agent})
+            await mobile_page.goto(url, wait_until="networkidle", timeout=self.config.screenshot_timeout)
             await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
         finally:
             await self.chromium_pool.release(mobile_page)
 
         print("🤖 Analyzing with AI...")
-        results = await self._analyze_screenshots(
+        results = await self.ai_analyzer.analyze_screenshots(
             desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data
         )
 
@@ -266,117 +265,6 @@ class WebsiteAnalyzer:
             )
 
         return results, load_time, lighthouse_data
-
-    async def _analyze_screenshots(
-        self, desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data=None
-    ):
-        """Use OpenAI Vision to analyze screenshots against checklist"""
-
-        # Convert images to base64
-        with open(desktop_screenshot, "rb") as f:
-            desktop_b64 = base64.b64encode(f.read()).decode()
-
-        with open(mobile_screenshot, "rb") as f:
-            mobile_b64 = base64.b64encode(f.read()).decode()
-
-        # Use Lighthouse metrics if available, otherwise fall back to Playwright timing
-        if lighthouse_data and lighthouse_data.get("available"):
-            actual_load_time = lighthouse_data.get("fcp_seconds", load_time)
-            performance_info = f" (Lighthouse FCP: {lighthouse_data.get('fcp_seconds', 'N/A'):.1f}s, Performance: {lighthouse_data.get('performance_score', 'N/A')}/100)"
-        else:
-            actual_load_time = load_time
-            performance_info = f" (Playwright timing)"
-
-        prompt = f"""
-        You are a UX/UI expert conducting a systematic website analysis. Analyze these screenshots methodically and return ONLY the failed criteria.
-
-        ANALYSIS CRITERIA:
-        1. Hero section clarity: Can you immediately understand what this website offers?
-        2. Load time: {actual_load_time:.1f} seconds{performance_info} (FAIL if > 3.0 seconds)
-        3. Call-to-Action: Is there a prominent CTA button in the hero section?
-        4. Mobile responsiveness: Compare desktop vs mobile - are they properly adapted?
-        5. Human connection: Are there visible human faces or emotional imagery?
-        6. Design consistency: Are fonts, colors, and layouts uniform?
-        7. Navigation: Is the menu structure clear and logical?
-        8. Interactive elements: Do buttons/links appear clickable?
-        9. Search functionality: Is there a visible search feature?
-        10. Content organization: Is text well-structured and not overwhelming?
-        11. Text contrast: Is text easily readable against backgrounds?
-        12. Text alignment: Are there obvious alignment problems?
-        13. Element spacing: Is spacing between elements consistent and clean?
-
-        STRICT INSTRUCTIONS:
-        - Examine BOTH desktop and mobile screenshots carefully
-        - Only return responses for criteria that clearly FAIL
-        - Use exact response format below
-        - Be consistent in your evaluation
-
-        RESPONSE FORMAT (return only failed ones):
-        R1. Users are not able to understand what the website is about at first glance.
-        R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, taking {actual_load_time:.1f} seconds to load, which is more than the recommended 3 seconds.
-        R3. CTA is missing in the hero section.
-        R4. Your website is not mobile responsive, affecting user experience on different devices.
-        R5. The design lacks human images, making it harder for users to connect emotionally.
-        R6. Font or Color is/are inconsistent throughout the website, leading to a disjointed design.
-        R7. Poor navigation menu, making it difficult for users to navigate.
-        R8. Buttons are unresponsive on hover, making it difficult to identify interactive elements.
-        R9. The search bar is not working.
-        R10. The website contains too much text, overwhelming users and affecting readability.
-        R11. Poor contrast between the text and background makes it difficult to read.
-        R12. There are alignment issues on the website, leading to a disorganized design.
-        R13. Inconsistent spacing between elements is leading to a cluttered and unappealing design.
-
-        Return only the R responses that apply, one per line.
-        """
-
-        messages = [
-            HumanMessage(
-                content=[
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{desktop_b64}",
-                            "detail": "high",
-                        },
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{mobile_b64}",
-                            "detail": "high",
-                        },
-                    },
-                ]
-            )
-        ]
-
-        try:
-            response = await self.llm.ainvoke(messages)
-            return response.content.strip()
-        except Exception as e:
-            print(f"❌ AI analysis failed: {e}")
-            # Basic fallback analysis
-            fallback_results = []
-            
-            # Check Playwright load time
-            if load_time > 3:
-                fallback_results.append(
-                    f"R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, taking {load_time:.1f} seconds to load, which is more than the recommended 3 seconds."
-                )
-            
-            # Check Lighthouse metrics if available
-            if lighthouse_data and lighthouse_data.get("available"):
-                if lighthouse_data.get('fcp_seconds', 0) > 2.5:
-                    fallback_results.append(
-                        f"R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, with First Contentful Paint at {lighthouse_data['fcp_seconds']:.1f} seconds."
-                    )
-                if lighthouse_data.get('performance_score', 100) < 70:
-                    fallback_results.append(
-                        f"R2. Your website's performance score is poor at {lighthouse_data['performance_score']}/100, indicating optimization issues that affect search rankings."
-                    )
-            
-            return "\n".join(fallback_results)
 
     def _cleanup_temp_screenshots(self, desktop_screenshot, mobile_screenshot):
         """Remove temporary screenshots after analysis"""
@@ -419,14 +307,111 @@ class WebsiteAnalyzer:
             # Fallback to cleanup
             self._cleanup_temp_screenshots(desktop_screenshot, mobile_screenshot)
 
+    async def _ensure_docker_running(self):
+        """Ensure Docker is running, attempt to start if not"""
+        try:
+            # Check if Docker is already running
+            process = await asyncio.create_subprocess_exec(
+                "docker", "info",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+            
+            if process.returncode == 0:
+                print("✅ Docker is running")
+                return True
+                
+        except (asyncio.TimeoutError, FileNotFoundError):
+            pass
+        
+        # Docker is not running - check if auto-start is enabled
+        if not self.config.auto_start_docker:
+            print("⚠️  Docker not running and auto-start is disabled")
+            return False
+        
+        # Docker is not running, try to start it
+        print("🐳 Docker not running, attempting to start...")
+        
+        try:
+            # Try to start Docker Desktop (macOS)
+            if os.path.exists("/Applications/Docker.app"):
+                print("🚀 Starting Docker Desktop...")
+                process = await asyncio.create_subprocess_exec(
+                    "open", "/Applications/Docker.app",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await process.communicate()
+                
+                # Wait for Docker to start (up to 60 seconds)
+                for i in range(12):  # 12 * 5 = 60 seconds
+                    await asyncio.sleep(5)
+                    try:
+                        check_process = await asyncio.create_subprocess_exec(
+                            "docker", "info",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await asyncio.wait_for(check_process.communicate(), timeout=5)
+                        
+                        if check_process.returncode == 0:
+                            print("✅ Docker started successfully!")
+                            return True
+                            
+                        print(f"⏳ Waiting for Docker to start... ({(i+1)*5}s)")
+                        
+                    except (asyncio.TimeoutError, Exception):
+                        continue
+                
+                print("⚠️  Docker startup timeout - continuing without Lighthouse")
+                return False
+                
+            # Try alternative startup methods for Linux/other systems
+            elif os.path.exists("/usr/bin/systemctl"):
+                print("🚀 Starting Docker service via systemctl...")
+                process = await asyncio.create_subprocess_exec(
+                    "sudo", "systemctl", "start", "docker",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await process.communicate()
+                
+                # Check if it started
+                await asyncio.sleep(3)
+                check_process = await asyncio.create_subprocess_exec(
+                    "docker", "info",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(check_process.communicate(), timeout=5)
+                
+                if check_process.returncode == 0:
+                    print("✅ Docker started successfully!")
+                    return True
+                    
+            print("⚠️  Could not start Docker automatically - continuing without Lighthouse")
+            return False
+            
+        except Exception as e:
+            print(f"⚠️  Failed to start Docker: {e} - continuing without Lighthouse")
+            return False
 
 async def main():
     import sys
+    
+    # Load configuration from environment
+    config = default_config
+    config.validate()
+    
+    # Parse command line arguments
     save_screenshots = False
     args = sys.argv[1:]
     if "--save-screenshots" in args:
         save_screenshots = True
         args.remove("--save-screenshots")
+    
     if len(args) != 1:
         print("Usage:")
         print("  python analyzer.py <website_url>")
@@ -434,12 +419,29 @@ async def main():
         print("\nExample:")
         print("  python analyzer.py https://example.com")
         print("  python analyzer.py https://example.com --save-screenshots")
+        print("\nConfiguration:")
+        print(f"  Max browsers: {config.max_browsers}")
+        print(f"  Max tabs per browser: {config.max_tabs_per_browser}")
+        print(f"  Screenshot timeout: {config.screenshot_timeout}ms")
+        print(f"  Load time threshold: {config.load_time_threshold}s")
         sys.exit(1)
+    
     url = args[0]
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    chromium_pool = ChromiumPool(max_browsers=4, max_tabs_per_browser=8)
-    analyzer = WebsiteAnalyzer(save_screenshots=save_screenshots, chromium_pool=chromium_pool)
+    
+    # Use configuration in ChromiumPool
+    chromium_pool = ChromiumPool(
+        max_browsers=config.max_browsers, 
+        max_tabs_per_browser=config.max_tabs_per_browser
+    )
+    
+    # Use configuration in WebsiteAnalyzer
+    analyzer = WebsiteAnalyzer(
+        save_screenshots=save_screenshots, 
+        chromium_pool=chromium_pool,
+        config=config
+    )
     try:
         results, load_time, lighthouse_data = await analyzer.analyze_website(url)
         print("\n" + "=" * 60)
