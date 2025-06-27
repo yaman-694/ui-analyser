@@ -5,7 +5,7 @@ echo "🚀 Running Website Analysis"
 echo "=========================="
 
 # Activate virtual environment
-source .venv/bin/activate
+# source .venv/bin/activate
 
 # Run the analyzer
 python analyzer.py "$@"

@@ -11,8 +11,73 @@ from langchain_core.messages import HumanMessage
 
 load_dotenv()
 
+class ChromiumPool:
+    def __init__(self, max_browsers=4, max_tabs_per_browser=8):
+        self.max_browsers = max_browsers
+        self.max_tabs_per_browser = max_tabs_per_browser
+        self.browsers = []  # List of (browser, [pages])
+        self.lock = asyncio.Lock()
+        self.playwright = None
+
+    async def start(self):
+        if not self.playwright:
+            self.playwright = await async_playwright().start()
+
+    async def acquire(self):
+        async with self.lock:
+            # Try to find a browser with available tab slot
+            for browser, pages in self.browsers:
+                if len(pages) < self.max_tabs_per_browser:
+                    page = await browser.new_page()
+                    pages.append(page)
+                    return browser, page
+            # If all browsers are full and we can create a new one
+            if len(self.browsers) < self.max_browsers:
+                browser = await self.playwright.chromium.launch(headless=True)
+                page = await browser.new_page()
+                self.browsers.append((browser, [page]))
+                return browser, page
+            # All browsers are full, wait for a slot
+            # (In production, you may want a queue or timeout here)
+            raise RuntimeError("All Chromium browsers and tabs are busy. Please try again later.")
+
+    async def release(self, page):
+        async with self.lock:
+            for browser, pages in self.browsers:
+                if page in pages:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                    pages.remove(page)
+                    # Optionally close browser if no tabs left
+                    if not pages:
+                        try:
+                            await browser.close()
+                        except Exception:
+                            pass
+                        self.browsers.remove((browser, pages))
+                    return
+
+    async def close(self):
+        async with self.lock:
+            for browser, pages in self.browsers:
+                for page in pages:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+            self.browsers.clear()
+            if self.playwright:
+                await self.playwright.stop()
+                self.playwright = None
+
 class WebsiteAnalyzer:
-    def __init__(self, save_screenshots=False):
+    def __init__(self, save_screenshots=False, chromium_pool=None):
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_key:
             raise ValueError("OPENAI_API_KEY not found in .env file")
@@ -25,6 +90,7 @@ class WebsiteAnalyzer:
             temperature=0.0,  # Completely deterministic
             seed=12345,  # Fixed seed for consistency
         )
+        self.chromium_pool = chromium_pool
 
     async def get_lighthouse_metrics(self, url):
         """Get Lighthouse performance metrics using Docker"""
@@ -154,69 +220,52 @@ class WebsiteAnalyzer:
         """Analyze website by taking screenshots and using AI vision"""
         print(f"🔍 Analyzing: {url}")
 
-        # Get Lighthouse metrics first (runs in parallel with screenshot setup)
         lighthouse_data = await self.get_lighthouse_metrics(url)
-
-        # Create screenshots directory (temporary)
         screenshots_dir = Path("screenshots")
         screenshots_dir.mkdir(exist_ok=True)
-
-        # Create temporary screenshot files
         desktop_screenshot = screenshots_dir / "temp_desktop.png"
         mobile_screenshot = screenshots_dir / "temp_mobile.png"
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+        # Use ChromiumPool for browser/tab management
+        await self.chromium_pool.start()
+        browser, desktop_page = await self.chromium_pool.acquire()
+        try:
+            print("📱 Taking desktop screenshot...")
+            await desktop_page.set_viewport_size({"width": 1920, "height": 1080})
+            start_time = datetime.now()
+            await desktop_page.goto(url, wait_until="networkidle", timeout=30000)
+            end_time = datetime.now()
+            load_time = (end_time - start_time).total_seconds()
+            await desktop_page.screenshot(path=desktop_screenshot, full_page=True)
+        finally:
+            await self.chromium_pool.release(desktop_page)
 
-            try:
-                # Desktop view
-                print("📱 Taking desktop screenshot...")
-                desktop_context = await browser.new_context(
-                    viewport={"width": 1920, "height": 1080}
-                )
-                desktop_page = await desktop_context.new_page()
+        browser, mobile_page = await self.chromium_pool.acquire()
+        try:
+            print("📱 Taking mobile screenshot...")
+            await mobile_page.set_viewport_size({"width": 375, "height": 667})
+            await mobile_page.set_extra_http_headers({"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)"})
+            await mobile_page.goto(url, wait_until="networkidle")
+            await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
+        finally:
+            await self.chromium_pool.release(mobile_page)
 
-                start_time = datetime.now()
-                await desktop_page.goto(url, wait_until="networkidle", timeout=30000)
-                end_time = datetime.now()
-                load_time = (end_time - start_time).total_seconds()
+        print("🤖 Analyzing with AI...")
+        results = await self._analyze_screenshots(
+            desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data
+        )
 
-                await desktop_page.screenshot(path=desktop_screenshot, full_page=True)
+        # Clean up temporary screenshots unless save_screenshots is True
+        if not self.save_screenshots:
+            self._cleanup_temp_screenshots(
+                desktop_screenshot, mobile_screenshot
+            )
+        else:
+            self._save_screenshots_with_names(
+                desktop_screenshot, mobile_screenshot, url
+            )
 
-                # Mobile view
-                print("📱 Taking mobile screenshot...")
-                mobile_context = await browser.new_context(
-                    viewport={"width": 375, "height": 667},
-                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)",
-                )
-                mobile_page = await mobile_context.new_page()
-                await mobile_page.goto(url, wait_until="networkidle")
-
-                await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
-
-                # Analyze with AI
-                print("🤖 Analyzing with AI...")
-                results = await self._analyze_screenshots(
-                    desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data
-                )
-
-                await desktop_context.close()
-                await mobile_context.close()
-
-                # Clean up temporary screenshots unless save_screenshots is True
-                if not self.save_screenshots:
-                    self._cleanup_temp_screenshots(
-                        desktop_screenshot, mobile_screenshot
-                    )
-                else:
-                    self._save_screenshots_with_names(
-                        desktop_screenshot, mobile_screenshot, url
-                    )
-
-                return results, load_time, lighthouse_data
-
-            finally:
-                await browser.close()
+        return results, load_time, lighthouse_data
 
     async def _analyze_screenshots(
         self, desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data=None
@@ -239,45 +288,45 @@ class WebsiteAnalyzer:
             performance_info = f" (Playwright timing)"
 
         prompt = f"""
-You are a UX/UI expert conducting a systematic website analysis. Analyze these screenshots methodically and return ONLY the failed criteria.
+        You are a UX/UI expert conducting a systematic website analysis. Analyze these screenshots methodically and return ONLY the failed criteria.
 
-ANALYSIS CRITERIA:
-1. Hero section clarity: Can you immediately understand what this website offers?
-2. Load time: {actual_load_time:.1f} seconds{performance_info} (FAIL if > 3.0 seconds)
-3. Call-to-Action: Is there a prominent CTA button in the hero section?
-4. Mobile responsiveness: Compare desktop vs mobile - are they properly adapted?
-5. Human connection: Are there visible human faces or emotional imagery?
-6. Design consistency: Are fonts, colors, and layouts uniform?
-7. Navigation: Is the menu structure clear and logical?
-8. Interactive elements: Do buttons/links appear clickable?
-9. Search functionality: Is there a visible search feature?
-10. Content organization: Is text well-structured and not overwhelming?
-11. Text contrast: Is text easily readable against backgrounds?
-12. Text alignment: Are there obvious alignment problems?
-13. Element spacing: Is spacing between elements consistent and clean?
+        ANALYSIS CRITERIA:
+        1. Hero section clarity: Can you immediately understand what this website offers?
+        2. Load time: {actual_load_time:.1f} seconds{performance_info} (FAIL if > 3.0 seconds)
+        3. Call-to-Action: Is there a prominent CTA button in the hero section?
+        4. Mobile responsiveness: Compare desktop vs mobile - are they properly adapted?
+        5. Human connection: Are there visible human faces or emotional imagery?
+        6. Design consistency: Are fonts, colors, and layouts uniform?
+        7. Navigation: Is the menu structure clear and logical?
+        8. Interactive elements: Do buttons/links appear clickable?
+        9. Search functionality: Is there a visible search feature?
+        10. Content organization: Is text well-structured and not overwhelming?
+        11. Text contrast: Is text easily readable against backgrounds?
+        12. Text alignment: Are there obvious alignment problems?
+        13. Element spacing: Is spacing between elements consistent and clean?
 
-STRICT INSTRUCTIONS:
-- Examine BOTH desktop and mobile screenshots carefully
-- Only return responses for criteria that clearly FAIL
-- Use exact response format below
-- Be consistent in your evaluation
+        STRICT INSTRUCTIONS:
+        - Examine BOTH desktop and mobile screenshots carefully
+        - Only return responses for criteria that clearly FAIL
+        - Use exact response format below
+        - Be consistent in your evaluation
 
-RESPONSE FORMAT (return only failed ones):
-R1. Users are not able to understand what the website is about at first glance.
-R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, taking {actual_load_time:.1f} seconds to load, which is more than the recommended 3 seconds.
-R3. CTA is missing in the hero section.
-R4. Your website is not mobile responsive, affecting user experience on different devices.
-R5. The design lacks human images, making it harder for users to connect emotionally.
-R6. Font or Color is/are inconsistent throughout the website, leading to a disjointed design.
-R7. Poor navigation menu, making it difficult for users to navigate.
-R8. Buttons are unresponsive on hover, making it difficult to identify interactive elements.
-R9. The search bar is not working.
-R10. The website contains too much text, overwhelming users and affecting readability.
-R11. Poor contrast between the text and background makes it difficult to read.
-R12. There are alignment issues on the website, leading to a disorganized design.
-R13. Inconsistent spacing between elements is leading to a cluttered and unappealing design.
+        RESPONSE FORMAT (return only failed ones):
+        R1. Users are not able to understand what the website is about at first glance.
+        R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, taking {actual_load_time:.1f} seconds to load, which is more than the recommended 3 seconds.
+        R3. CTA is missing in the hero section.
+        R4. Your website is not mobile responsive, affecting user experience on different devices.
+        R5. The design lacks human images, making it harder for users to connect emotionally.
+        R6. Font or Color is/are inconsistent throughout the website, leading to a disjointed design.
+        R7. Poor navigation menu, making it difficult for users to navigate.
+        R8. Buttons are unresponsive on hover, making it difficult to identify interactive elements.
+        R9. The search bar is not working.
+        R10. The website contains too much text, overwhelming users and affecting readability.
+        R11. Poor contrast between the text and background makes it difficult to read.
+        R12. There are alignment issues on the website, leading to a disorganized design.
+        R13. Inconsistent spacing between elements is leading to a cluttered and unappealing design.
 
-Return only the R responses that apply, one per line.
+        Return only the R responses that apply, one per line.
         """
 
         messages = [
@@ -373,15 +422,11 @@ Return only the R responses that apply, one per line.
 
 async def main():
     import sys
-
-    # Check for save screenshots flag
     save_screenshots = False
     args = sys.argv[1:]
-
     if "--save-screenshots" in args:
         save_screenshots = True
         args.remove("--save-screenshots")
-
     if len(args) != 1:
         print("Usage:")
         print("  python analyzer.py <website_url>")
@@ -390,46 +435,38 @@ async def main():
         print("  python analyzer.py https://example.com")
         print("  python analyzer.py https://example.com --save-screenshots")
         sys.exit(1)
-
     url = args[0]
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-
-    analyzer = WebsiteAnalyzer(save_screenshots=save_screenshots)
-
+    chromium_pool = ChromiumPool(max_browsers=4, max_tabs_per_browser=8)
+    analyzer = WebsiteAnalyzer(save_screenshots=save_screenshots, chromium_pool=chromium_pool)
     try:
         results, load_time, lighthouse_data = await analyzer.analyze_website(url)
-
         print("\n" + "=" * 60)
         print("🎯 WEBSITE ANALYSIS RESULTS")
         print("=" * 60)
         print(f"🌐 URL: {url}")
         print(f"⏱️  Load Time: {load_time:.1f} seconds")
-        
-        # Show Lighthouse metrics if available
         if lighthouse_data and lighthouse_data.get("available"):
             print(f"⚡ Lighthouse FCP: {lighthouse_data.get('fcp_seconds'):.1f} seconds")
             print(f"📊 Performance Score: {lighthouse_data.get('performance_score')}/100")
-        
         print("\n📋 ISSUES FOUND:")
         print("-" * 30)
-
         if results.strip():
             for line in results.split("\n"):
                 if line.strip():
                     print(f"• {line.strip()}")
         else:
             print("✅ No major issues found!")
-
         print("=" * 60)
         if save_screenshots:
             print("📸 Screenshots saved in ./screenshots/")
         else:
             print("🗑️  Temporary screenshots cleaned up")
-
     except Exception as e:
         print(f"❌ Analysis failed: {e}")
-
+    finally:
+        await chromium_pool.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
