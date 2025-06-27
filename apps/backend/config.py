@@ -24,10 +24,18 @@ class Config:
     auto_start_docker: bool = True        # Automatically start Docker if not running
     
     # AI Configuration
+    ai_provider: str = "openai"  # "openai" or "gemini"
+
+    # OpenAI Configuration
     openai_model: str = "gpt-4o"
     openai_max_tokens: int = 1500
     openai_temperature: float = 0.0
     openai_seed: int = 12345
+    
+    # Gemini Configuration  
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_max_tokens: int = 1500
+    gemini_temperature: float = 0.0
     
     # Screenshot Configuration
     desktop_viewport: Dict[str, int] = None
@@ -56,8 +64,21 @@ class Config:
         if self.lighthouse_timeout <= 0:
             raise ValueError("lighthouse_timeout must be positive")
         
-        if not os.getenv("OPENAI_API_KEY"):
-            raise EnvironmentError("OPENAI_API_KEY environment variable is required")
+        if self.ai_provider not in ["openai", "gemini"]:
+            raise ValueError("ai_provider must be 'openai' or 'gemini'")
+        
+        if self.ai_provider == "openai" and not self.openai_model:
+            raise ValueError("openai_model must be specified when using OpenAI")
+            
+        if self.ai_provider == "gemini" and not self.gemini_model:
+            raise ValueError("gemini_model must be specified when using Gemini")
+        
+        # Check API keys only for the selected provider
+        if self.ai_provider == "openai" and not os.getenv("OPENAI_API_KEY"):
+            raise EnvironmentError("OPENAI_API_KEY environment variable is required when using OpenAI")
+            
+        if self.ai_provider == "gemini" and not os.getenv("GOOGLE_API_KEY"):
+            raise EnvironmentError("GOOGLE_API_KEY environment variable is required when using Gemini")
 
 
 # Default configuration instance

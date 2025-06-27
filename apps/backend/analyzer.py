@@ -227,6 +227,9 @@ class WebsiteAnalyzer:
 
         # Use ChromiumPool for browser/tab management
         await self.chromium_pool.start()
+        load_time = 0
+        website_accessible = False
+        
         browser, desktop_page = await self.chromium_pool.acquire()
         try:
             print("📱 Taking desktop screenshot...")
@@ -236,18 +239,36 @@ class WebsiteAnalyzer:
             end_time = datetime.now()
             load_time = (end_time - start_time).total_seconds()
             await desktop_page.screenshot(path=desktop_screenshot, full_page=True)
+            website_accessible = True
+        except Exception as e:
+            print(f"❌ Website access failed: {e}")
+            # Check if it's a timeout error
+            if "Timeout" in str(e) or "timeout" in str(e).lower():
+                return self._handle_website_timeout(url), load_time, lighthouse_data
+            else:
+                return self._handle_website_error(url, str(e)), load_time, lighthouse_data
         finally:
             await self.chromium_pool.release(desktop_page)
 
-        browser, mobile_page = await self.chromium_pool.acquire()
-        try:
-            print("📱 Taking mobile screenshot...")
-            await mobile_page.set_viewport_size(self.config.mobile_viewport)
-            await mobile_page.set_extra_http_headers({"User-Agent": self.config.mobile_user_agent})
-            await mobile_page.goto(url, wait_until="networkidle", timeout=self.config.screenshot_timeout)
-            await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
-        finally:
-            await self.chromium_pool.release(mobile_page)
+        # Only try mobile screenshot if desktop was successful
+        if website_accessible:
+            browser, mobile_page = await self.chromium_pool.acquire()
+            try:
+                print("📱 Taking mobile screenshot...")
+                await mobile_page.set_viewport_size(self.config.mobile_viewport)
+                await mobile_page.set_extra_http_headers({"User-Agent": self.config.mobile_user_agent})
+                await mobile_page.goto(url, wait_until="networkidle", timeout=self.config.screenshot_timeout)
+                await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
+            except Exception as e:
+                print(f"⚠️  Mobile screenshot failed: {e}")
+                # Create a copy of desktop screenshot for mobile if mobile fails
+                try:
+                    import shutil
+                    shutil.copy2(desktop_screenshot, mobile_screenshot)
+                except:
+                    pass
+            finally:
+                await self.chromium_pool.release(mobile_page)
 
         print("🤖 Analyzing with AI...")
         results = await self.ai_analyzer.analyze_screenshots(
@@ -265,6 +286,36 @@ class WebsiteAnalyzer:
             )
 
         return results, load_time, lighthouse_data
+
+    def _handle_website_timeout(self, url):
+        """Handle website timeout - likely blocked or slow website"""
+        return (
+            "🚫 WEBSITE ACCESS ISSUE\n\n"
+            "The website is not responding or taking too long to load (>30 seconds).\n\n"
+            "Possible reasons:\n"
+            "• Website may be down or not working\n"
+            "• Website may be blocked in your country/region\n" 
+            "• Website may have very slow servers\n"
+            "• Network connectivity issues\n\n"
+            "Please try:\n"
+            "• Check if the website works in your browser\n"
+            "• Try again later\n"
+            "• Use a VPN if the website might be geo-blocked"
+        )
+
+    def _handle_website_error(self, url, error_message):
+        """Handle other website access errors"""
+        return (
+            "🚫 WEBSITE ACCESS ERROR\n\n"
+            "Unable to access the website for analysis.\n\n"
+            "Possible reasons:\n"
+            "• Website does not exist or URL is incorrect\n"
+            "• Website requires special authentication\n"
+            "• Website blocks automated tools\n"
+            "• SSL/HTTPS certificate issues\n\n"
+            f"Technical error: {error_message[:100]}...\n\n"
+            "Please verify the URL is correct and the website is accessible."
+        )
 
     def _cleanup_temp_screenshots(self, desktop_screenshot, mobile_screenshot):
         """Remove temporary screenshots after analysis"""
@@ -459,7 +510,7 @@ async def main():
                 if line.strip():
                     print(f"• {line.strip()}")
         else:
-            print("✅ No major issues found!")
+            print("✅ No issues found!")
         print("=" * 60)
         if save_screenshots:
             print("📸 Screenshots saved in ./screenshots/")

@@ -1,10 +1,11 @@
 """
-AI Analysis module using LangChain and OpenAI for website screenshot analysis.
+AI Analysis module using LangChain with OpenAI and Gemini for website screenshot analysis.
 """
 
 import os
 import base64
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
@@ -12,7 +13,10 @@ load_dotenv()
 
 
 class AIScreenshotAnalyzer:
-    """Handles AI-powered analysis of website screenshots using OpenAI Vision."""
+    """Handles AI-powered analysis of website screenshots using OpenAI Vision or Gemini Vision."""
+    
+    # Supported AI providers
+    SUPPORTED_PROVIDERS = ["openai", "gemini"]
     
     # Response templates for analysis results
     RESPONSE_TEMPLATES = {
@@ -34,6 +38,19 @@ class AIScreenshotAnalyzer:
     def __init__(self, config):
         """Initialize the AI analyzer with configuration."""
         self.config = config
+        self.provider = getattr(config, 'ai_provider', 'openai').lower()
+        
+        if self.provider not in self.SUPPORTED_PROVIDERS:
+            raise ValueError(f"Unsupported AI provider: {self.provider}. Supported: {self.SUPPORTED_PROVIDERS}")
+        
+        # Initialize the appropriate LLM based on provider
+        if self.provider == "openai":
+            self._init_openai()
+        elif self.provider == "gemini":
+            self._init_gemini()
+    
+    def _init_openai(self):
+        """Initialize OpenAI LLM"""
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_key:
             raise ValueError("OPENAI_API_KEY not found in .env file")
@@ -46,10 +63,30 @@ class AIScreenshotAnalyzer:
             seed=self.config.openai_seed,
         )
     
+    def _init_gemini(self):
+        """Initialize Gemini LLM"""
+        self.gemini_key = os.getenv("GOOGLE_API_KEY")
+        if not self.gemini_key:
+            raise ValueError("GOOGLE_API_KEY not found in .env file")
+        
+        # Set default Gemini model if not specified in config
+        gemini_model = getattr(self.config, 'gemini_model', 'gemini-1.5-flash')
+        gemini_max_tokens = getattr(self.config, 'gemini_max_tokens', 1500)
+        gemini_temperature = getattr(self.config, 'gemini_temperature', 0.0)
+        
+        self.llm = ChatGoogleGenerativeAI(
+            model=gemini_model,
+            google_api_key=self.gemini_key,
+            max_output_tokens=gemini_max_tokens,
+            temperature=gemini_temperature,
+        )
+    
     async def analyze_screenshots(
         self, desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data=None
     ):
-        """Use OpenAI Vision to analyze screenshots against checklist"""
+        """Use AI Vision (OpenAI or Gemini) to analyze screenshots against checklist"""
+        
+        print(f"🤖 Using {self.provider.upper()} for AI analysis...")
         
         # Convert images to base64
         with open(desktop_screenshot, "rb") as f:
@@ -68,7 +105,22 @@ class AIScreenshotAnalyzer:
         
         prompt = self._generate_analysis_prompt(actual_load_time, performance_info)
         
-        messages = [
+        # Create messages based on provider
+        if self.provider == "openai":
+            messages = self._create_openai_messages(prompt, desktop_b64, mobile_b64)
+        elif self.provider == "gemini":
+            messages = self._create_gemini_messages(prompt, desktop_b64, mobile_b64)
+        
+        try:
+            response = await self.llm.ainvoke(messages)
+            return response.content.strip()
+        except Exception as e:
+            print(f"❌ {self.provider.upper()} analysis failed: {e}")
+            return "AI analysis not available"
+    
+    def _create_openai_messages(self, prompt, desktop_b64, mobile_b64):
+        """Create messages format for OpenAI Vision"""
+        return [
             HumanMessage(
                 content=[
                     {"type": "text", "text": prompt},
@@ -89,37 +141,28 @@ class AIScreenshotAnalyzer:
                 ]
             )
         ]
-        
-        try:
-            response = await self.llm.ainvoke(messages)
-            return response.content.strip()
-        except Exception as e:
-            print(f"❌ AI analysis failed: {e}")
-            # Basic fallback analysis
-            return self._fallback_analysis(load_time, lighthouse_data)
     
-    def _fallback_analysis(self, load_time, lighthouse_data):
-        """Provide basic fallback analysis when AI fails"""
-        fallback_results = []
-        
-        # Check Playwright load time
-        if load_time > self.config.load_time_threshold:
-            fallback_results.append(
-                self.RESPONSE_TEMPLATES["R2"].format(load_time=load_time)
+    def _create_gemini_messages(self, prompt, desktop_b64, mobile_b64):
+        """Create messages format for Gemini Vision"""
+        return [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{desktop_b64}",
+                        },
+                    },
+                    {
+                        "type": "image_url", 
+                        "image_url": {
+                            "url": f"data:image/png;base64,{mobile_b64}",
+                        },
+                    },
+                ]
             )
-        
-        # Check Lighthouse metrics if available
-        if lighthouse_data and lighthouse_data.get("available"):
-            if lighthouse_data.get('fcp_seconds', 0) > self.config.fcp_threshold:
-                fallback_results.append(
-                    f"R2. Your website's core vitals have failed on Google PageSpeed, which could lead to a significant drop in search rankings. Your website is slow, with First Contentful Paint at {lighthouse_data['fcp_seconds']:.1f} seconds."
-                )
-            if lighthouse_data.get('performance_score', 100) < self.config.performance_score_threshold:
-                fallback_results.append(
-                    f"R2. Your website's performance score is poor at {lighthouse_data['performance_score']}/100, indicating optimization issues that affect search rankings."
-                )
-        
-        return "\n".join(fallback_results)
+        ]
     
     def _generate_analysis_prompt(self, actual_load_time, performance_info):
         """Generate the AI analysis prompt with dynamic response templates"""
@@ -132,18 +175,18 @@ class AIScreenshotAnalyzer:
         You are a UX/UI expert conducting a systematic website analysis. Analyze these screenshots methodically and return ONLY the failed criteria.
 
         ANALYSIS CRITERIA:
-        1. Hero section clarity: Can you immediately understand what this website offers?
+        1. Hero section clarity: Can you immediately understand what this website offers? (Check the text written in the hero section; if no text, then no user can understand means FAIL, and if present, it should be short and to the point.)
         2. Load time: {actual_load_time:.1f} seconds{performance_info} (FAIL if > {self.config.load_time_threshold} seconds)
         3. Call-to-Action: Is there a prominent CTA button in the hero section?
         4. Mobile responsiveness: Compare desktop vs mobile - are they properly adapted?
         5. Human connection: Are there visible human faces or emotional imagery?
-        6. Design consistency: Are fonts, colors, and layouts uniform?
+        6. Design consistency: Are fonts, colors, and layouts uniform?(The number of different fonts should be less than 3, and the number of different colors should be less than 5.)
         7. Navigation: Is the menu structure clear and logical?
         8. Interactive elements: Do buttons/links appear clickable?
-        9. Search functionality: Is there a visible search feature?
-        10. Content organization: Is text well-structured and not overwhelming?
+        9. Search functionality: Is there a visible search feature?(If the search bar is present, it should be functional and easy to find.)
+        10. Content organization: Is text well-structured and not overwhelming?(short and concise text is preferred)
         11. Text contrast: Is text easily readable against backgrounds?
-        12. Text alignment: Are there obvious alignment problems?
+        12. Text alignment: Are there obvious alignment problems?(Check for misaligned text, images, or buttons that disrupt the layout.)
         13. Element spacing: Is spacing between elements consistent and clean?
 
         STRICT INSTRUCTIONS:
