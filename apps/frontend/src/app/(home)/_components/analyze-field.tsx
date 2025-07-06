@@ -1,47 +1,61 @@
-"use client"
+"use client";
 
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import { toast } from "sonner"
-import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 import {
-    Form,
-    FormControl,
-    FormField,
-    FormItem,
-    FormMessage
-} from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 
 const FormSchema = z.object({
   url: z.string().url({
     message: "Please enter a valid URL.",
   }),
-})
+});
 
 export function AnalyzeField() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       url: "",
     },
-  })
+  });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    toast("You submitted the following values", {
-      description: (
-        <pre className="mt-2 w-[320px] rounded-md bg-neutral-950 p-4">
-          <code className="text-input">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    })
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Redirect to analyze page with URL as query parameter
+      const encodedUrl = encodeURIComponent(data.url);
+      router.push(`/analyze?url=${encodedUrl}`);
+    } catch (err) {
+      console.error("Error navigating to analyze page:", err);
+      setError("An unexpected error occurred. Please try again.");
+      setIsLoading(false);
+    }
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="w-full max-w-3xl mx-auto px-5 mt-16">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="w-full max-w-3xl px-5 mx-auto mt-16"
+      >
+        {error && <div className="mb-3 text-red-500 text-center">{error}</div>}
         <FormField
           control={form.control}
           name="url"
@@ -49,16 +63,18 @@ export function AnalyzeField() {
             <FormItem>
               <FormControl>
                 <div className="bg-input rounded-full flex overflow-hidden items-center pr-1.5">
-                  <Input 
-                    className="bg-input border-0 rounded-full font-body flex-1 py-6 px-6 text-lg focus-visible:ring-0 focus-visible:ring-offset-0" 
-                    placeholder="www.growigh.com" 
-                    {...field} 
+                  <Input
+                    className="flex-1 px-6 py-6 text-lg border-0 rounded-full bg-input font-body focus-visible:ring-0 focus-visible:ring-offset-0"
+                    placeholder="www.growigh.com"
+                    {...field}
+                    disabled={isLoading}
                   />
-                  <Button 
-                    type="submit" 
+                  <Button
+                    type="submit"
                     className="bg-[#3A2106] hover:bg-[#2A1805] font-body text-input rounded-full text-lg font-medium"
+                    disabled={isLoading}
                   >
-                    Analyze
+                    {isLoading ? "Preparing..." : "Analyze"}
                   </Button>
                 </div>
               </FormControl>
@@ -68,5 +84,5 @@ export function AnalyzeField() {
         />
       </form>
     </Form>
-  )
+  );
 }

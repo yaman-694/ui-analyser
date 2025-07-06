@@ -7,6 +7,6 @@ export const attachServices = (req: Request, res: Response, next: NextFunction):
     credits: creditsService,
     // Add other services as needed
   };
-
+  
   next();
 };

@@ -1,25 +1,31 @@
 import { config } from 'dotenv';
 config();
 
+import cors from 'cors';
 import express from 'express';
 import { errorHandler, notFound } from './middleware/error.middleware';
+import { attachServices } from './middleware/services.middleware';
+
+import { mongodbConnect } from './config/mongodb';
 import router from './routes';
 
 // Initialize the Express application
 const app = express();
-const port = process.env.PORT || 3000;
-
-// Middleware configuration for different routes
-// Special handling for Stripe webhook - it needs the raw body for signature verification
-// Use the correct path based on your API version
-const version = process.env.API_VERSION || 'v1';
-app.use(`/api/${version}/webhook/stripe`, express.raw({ type: 'application/json' }));
+const port = process.env.PORT || 3001;
 
 // For all other routes - parse JSON as usual
 app.use(express.json());
 
+mongodbConnect();
+
+// Enable CORS for all routes
+app.use(cors({
+  origin: "*",
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
+}));
+
 // Register global middleware
-import { attachServices } from './middleware/services.middleware';
 app.use(attachServices);
 
 // Register routes

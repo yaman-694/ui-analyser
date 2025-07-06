@@ -21,19 +21,4 @@ export const HTTP_STATUS_CODE = {
 	GATEWAY_TIMEOUT: 504
 };
 
-export const BASE_SUBSCRIPTION_PLAN = {
-	id: process.env.BASE_SUBSCRIPTION_PRICE_ID,
-	credit: 20
-}
-export const PLUS_SUBSCRIPTION_PLAN = {
-	id: process.env.PLUS_SUBSCRIPTION_PRICE_ID,
-	credit: 50
-}
-
-
-export const STRIPE = {
-	webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-	apiKey: process.env.STRIPE_SECRET_KEY,
-	baseSubscriptionPlan: BASE_SUBSCRIPTION_PLAN,
-	plusSubscriptionPlan: PLUS_SUBSCRIPTION_PLAN
-}
+export const DAILY_CREDITS_LIMIT = 5;

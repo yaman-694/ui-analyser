@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import { Webhook } from 'svix'
 import { HTTP_STATUS_CODE } from '../constants/constants'
-import prisma from '../prisma/prisma'
+import User from '../model/user.model'
 
 interface WebhookEvent {
   data: {
@@ -93,6 +93,25 @@ export const clerkWebhookHandler = async (
         // Extract the first email address
         const email = email_addresses[0]?.email_address
 
+        // Check if the user is present or not
+        const user = await User.findOne({ email });
+
+        if (user) {
+          res.status(HTTP_STATUS_CODE.OK).json({
+            success: true,
+            message: 'User already exists',
+            data: user
+          })
+          return
+        }
+
+        await User.create({
+          clerkId: id,
+          email: email,
+          name: [first_name, last_name].filter(Boolean).join(' ') || null,
+          credits: 5 // Default credits for new users
+        })
+
         if (!email) {
           res.status(HTTP_STATUS_CODE.BAD_REQUEST).json({
             success: false,
@@ -100,17 +119,6 @@ export const clerkWebhookHandler = async (
           })
           return
         }
-
-        // Construct the user name
-        const name = [first_name, last_name].filter(Boolean).join(' ') || null
-
-        const user = await prisma.user.create({
-          data: {
-            id: id, // Use the Clerk user ID
-            email: email,
-            name: name
-          }
-        })
 
         res.status(HTTP_STATUS_CODE.CREATED).json({
           success: true,
@@ -120,17 +128,20 @@ export const clerkWebhookHandler = async (
         return
       }
 
-      // Add additional cases as needed for other events
-      case 'user.updated': {
-        // Handle user update events if needed
-        res.status(HTTP_STATUS_CODE.OK).json({
-          success: true,
-          message: 'User update event received'
-        })
-        return
-      }
-
       case 'user.deleted': {
+
+        const { id } = data
+        // Find the user by Clerk ID
+        const user = await User.findOne({
+          clerkId: id
+        })
+        if (!user) {
+          res.status(HTTP_STATUS_CODE.NOT_FOUND).json({
+            success: false,
+            message: 'User not found'
+          })
+          return
+        }
         // Handle user deletion if needed
         res.status(HTTP_STATUS_CODE.OK).json({
           success: true,
