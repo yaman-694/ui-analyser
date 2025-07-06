@@ -36,20 +36,8 @@ async function checkCredits(
         });
         return;
       }
-      
-      // If user has credits, deduct one credit
-      const success = await req.services.credits.deductCredits(userId, 1);
-      
-      if (!success) {
-        res.status(HTTP_STATUS_CODE.PAYMENT_REQUIRED).json({ 
-          error: 'Failed to deduct credits', 
-          message: 'Could not deduct credits from your account. Please try again later.' 
-        });
-        return;
-      }
-      
-      // Attach remaining credits to request for potential usage in controllers
-      req.remainingCredits = currentCredits - 1;
+
+
       next();
       
     } catch (serviceError) {

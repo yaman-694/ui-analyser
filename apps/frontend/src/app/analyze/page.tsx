@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { analyzeWebsite } from '../../../api-lists';
+import { urlSchema } from '@/utils/validators';
 
 interface AnalysisResult {
   // Define a proper type based on your API response structure
@@ -24,11 +25,19 @@ export default function AnalyzePage() {
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
+  const resetURL = useCallback(() => {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.delete("url");
+    window.history.replaceState(null, "", newUrl.toString());
+  }, []);
+
   useEffect(() => {
     if (!url) {
       router.push('/');
       return;
     }
+
+    const isValid = urlSchema.safeParse({ url });
 
     async function performAnalysis() {
       try {
@@ -54,8 +63,13 @@ export default function AnalyzePage() {
       }
     }
 
-    performAnalysis();
-  }, [url, router]);
+    if (isValid.success) {
+      performAnalysis();
+    } else {
+      resetURL();
+      router.push('/');
+    }
+  }, [url, router, resetURL]);
 
   if (!url) {
     return null; // Will redirect in useEffect
