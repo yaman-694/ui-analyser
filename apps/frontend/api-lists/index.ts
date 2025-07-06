@@ -16,3 +16,6 @@ apiClient.interceptors.request.use(async (config) => {
 
 export const analyzeWebsite = (payload: { url: string }): Promise<AxiosResponse> =>
 	apiClient.post("/ai/analyze-ui", payload);
+
+export const getCurrentUser = (): Promise<AxiosResponse> =>
+	apiClient.get("/user/get-current-user");

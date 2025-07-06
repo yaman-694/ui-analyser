@@ -6,7 +6,7 @@ import refreshCredits from "../middleware/refresh-credits.middleware";
 import { attachServices } from "../middleware/services.middleware";
 import { validateSchema } from "../validators/validate-schema";
 import { urlSchema } from "../validators/validators";
-import { analyzeUIController } from "../controllers/analyze-website";
+import { analyzeUIController } from "../controllers/analyze-website.controller";
 
 const aiRouter = Router();
 

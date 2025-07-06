@@ -4,6 +4,7 @@ import {
 } from '@clerk/nextjs'
 import type { Metadata } from 'next'
 import './globals.css'
+import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
   title: 'UI Analyser',
@@ -21,6 +22,7 @@ export default function RootLayout({
         <body className={`antialiased font-body`}>
           <Header />
           {children}
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>
