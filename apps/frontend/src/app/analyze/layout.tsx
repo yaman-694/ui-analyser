@@ -1,3 +1,4 @@
+import Background from '@/components/background'
 import type { Metadata } from 'next'
   
 export const metadata: Metadata = {
@@ -12,7 +13,8 @@ export default function RootLayout({
 }>) {
   return (
     <section className="min-h-screen w-full bg-amber-500">
-        {children}
+      <Background />
+        <div className='relative'>{children}</div>
     </section>
   )
 }

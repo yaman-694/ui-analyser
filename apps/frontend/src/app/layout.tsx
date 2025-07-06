@@ -1,10 +1,11 @@
-import Header from '@/components/header'
+import Footer from '@/components/footer';
+import Header from '@/components/header';
 import {
   ClerkProvider,
-} from '@clerk/nextjs'
-import type { Metadata } from 'next'
-import './globals.css'
+} from '@clerk/nextjs';
+import type { Metadata } from 'next';
 import { Toaster } from "react-hot-toast";
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'UI Analyser',
@@ -23,6 +24,7 @@ export default function RootLayout({
           <Header />
           {children}
           <Toaster />
+        <Footer />
         </body>
       </html>
     </ClerkProvider>

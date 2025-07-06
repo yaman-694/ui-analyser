@@ -107,6 +107,41 @@ export const analyzeUIController = async (
           /Load Time: (\d+\.?\d*) seconds/
         );
 
+        const desktopScreenshotMatch = stdoutData.match(
+          /Desktop screenshot: (.+)/
+        );
+
+        const mobileScreenshotMatch = stdoutData.match(
+          /Mobile screenshot: (.+)/
+        );
+
+        // Read screenshots if available.
+        const desktopScreenshotPath = desktopScreenshotMatch
+          ? path.join(desktopScreenshotMatch[1].trim())
+          : null;
+
+        const mobileScreenshotPath = mobileScreenshotMatch
+          ? path.join(mobileScreenshotMatch[1].trim())
+          : null;
+        
+       // Read files to ensure they exist and get the image data
+       let desktopScreenshot = null;
+       let mobileScreenshot = null;
+       
+       try {
+         if (desktopScreenshotPath && fs.existsSync(desktopScreenshotPath)) {
+           desktopScreenshot = fs.readFileSync(desktopScreenshotPath).toString('base64');
+           console.log(`Read desktop screenshot: ${desktopScreenshotPath}`);
+         }
+         
+         if (mobileScreenshotPath && fs.existsSync(mobileScreenshotPath)) {
+           mobileScreenshot = fs.readFileSync(mobileScreenshotPath).toString('base64');
+           console.log(`Read mobile screenshot: ${mobileScreenshotPath}`);
+         }
+       } catch (fileError) {
+         console.error("Error reading screenshot files:", fileError);
+       } 
+
         // Parse issues found
         const issuesSection = stdoutData.split("ISSUES FOUND:")[1];
         const issuesList = issuesSection
@@ -126,6 +161,10 @@ export const analyzeUIController = async (
           loadTime: loadTimeMatch ? parseFloat(loadTimeMatch[1]) : null,
           issues: issuesList,
           rawOutput: stdoutData,
+          screenshots: {
+            desktop: desktopScreenshot,
+            mobile: mobileScreenshot,
+          },
         };
 
         // If user has credits, deduct one credit
