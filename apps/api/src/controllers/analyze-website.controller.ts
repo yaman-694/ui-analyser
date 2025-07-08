@@ -1,18 +1,17 @@
 /**
  * Controller for the website UI analysis endpoint
  *
- * This controller executes the Python-based website analyzer located in /apps/agent/analyzer.py
- * It handles both the HTTP response to the client and the asynchronous execution of the analyzer
+ * This controller makes API requests to the Python-based FastAPI analyzer server
+ * It handles both the HTTP response to the client and communication with the analyzer API
  *
  * The analyzer performs:
  * 1. Website screenshot capture using Playwright
  * 2. Performance analysis using Lighthouse
  * 3. AI-based UI analysis using vision models
  */
-import { spawn } from "child_process";
+import axios from "axios";
 import { NextFunction, Request, Response } from "express";
 import fs from "fs";
-import path from "path";
 import { HTTP_STATUS_CODE } from "../constants/constants";
 
 export const analyzeUIController = async (
@@ -24,175 +23,114 @@ export const analyzeUIController = async (
   const userId = req.userId;
 
   try {
-    // Path to the Python analyzer script
-    const agentPath = path.join(__dirname, "../../../agent");
-
-    // Check if the Python script exists
-    const analyzerPath = path.join(agentPath, "analyzer.py");
-    if (!fs.existsSync(analyzerPath)) {
-      res.status(HTTP_STATUS_CODE.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: "Analyzer script not found",
-        error: `Could not find ${analyzerPath}`,
-      });
+    // Check for required environment variables
+    const apiUrl = process.env.ANALYZER_API_URL || 'http://localhost:8000';
+    const apiKey = process.env.AGENT_API_KEY;
+    
+    if (!apiKey) {
+      console.warn("ANALYZER_API_KEY not set in environment, API calls may fail if authentication is required");
     }
-
-    // Check if the virtual environment exists
-    const venvPath = path.join(agentPath, ".venv");
-    const usePythonVenv = fs.existsSync(venvPath);
-
-    // Execute the Python analyzer script
-    const args = ["analyzer.py", url, "--save-screenshots"];
-
-    // Determine how to run Python based on environment
-    let pythonProcess;
-
-    if (usePythonVenv) {
-      // Use the run.sh script if available
-      if (fs.existsSync(path.join(agentPath, "run.sh"))) {
-        console.log(`Running analyzer with run.sh script`);
-        const shellArgs = [url];
-        shellArgs.push("--save-screenshots");
-
-        pythonProcess = spawn("./run.sh", shellArgs, {
-          cwd: agentPath,
-          env: { ...process.env, PYTHONUNBUFFERED: "1" },
-          shell: true,
-        });
-      } else {
-        // For macOS/Linux
-        const activateCmd = `source ${path.join(venvPath, "bin/activate")} && python ${args.join(" ")}`;
-        pythonProcess = spawn(activateCmd, [], {
-          cwd: agentPath,
-          env: { ...process.env, PYTHONUNBUFFERED: "1" },
-          shell: true,
-        });
+    
+    console.log(`Making request to analyzer API at ${apiUrl} for URL: ${url}`);
+    
+    // Make request to the FastAPI analyzer service
+    const response = await axios.post(
+      `${apiUrl}/analyze`,
+      { 
+        url: url, 
+        save_screenshots: true 
+      },
+      { 
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey || ''
+        },
       }
-    } else {
-      // Use system Python
-      pythonProcess = spawn("python", args, {
-        cwd: agentPath,
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
-      });
+    );
+    
+    // Process API response
+    const analysisData = response.data;
+    
+    // Get screenshots from API response
+    let desktopScreenshot = null;
+    let mobileScreenshot = null;
+    
+    // Use base64 screenshots directly from API response
+    if (analysisData.screenshots?.base64?.desktop) {
+      // Add data URL prefix if not already present
+      const desktopBase64 = analysisData.screenshots.base64.desktop;
+      desktopScreenshot = desktopBase64.startsWith('data:') 
+        ? desktopBase64 
+        : `data:image/png;base64,${desktopBase64}`;
+      console.log("Received desktop screenshot from API (base64 encoded)");
     }
-
-    let stdoutData = "";
-    let stderrData = "";
-
-    pythonProcess.stdout.on("data", (data) => {
-      stdoutData += data.toString();
-      console.log(`[Analyzer] ${data.toString().trim()}`);
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      stderrData += data.toString();
-      console.error(`[Analyzer Error] ${data.toString().trim()}`);
-    });
-
-    // Process is complete - results would be saved for later retrieval
-    pythonProcess.on("close", async (code) => {
-      if (code !== 0) {
-        console.error(`Analysis process exited with code ${code}`);
-        console.error(stderrData);
-        // Here you would typically store the error in a database or log system
-        return;
-      }
-
+    
+    if (analysisData.screenshots?.base64?.mobile) {
+      // Add data URL prefix if not already present
+      const mobileBase64 = analysisData.screenshots.base64.mobile;
+      mobileScreenshot = mobileBase64.startsWith('data:') 
+        ? mobileBase64 
+        : `data:image/png;base64,${mobileBase64}`;
+      console.log("Received mobile screenshot from API (base64 encoded)");
+    }
+    
+    // Fallback to reading from file system if paths are provided but base64 is not
+    if (!desktopScreenshot && analysisData.screenshots?.paths?.desktop) {
       try {
-        // Parse performance metrics if available
-        const lighthouseMatch = stdoutData.match(
-          /Performance Score: (\d+\.?\d*)\/100/
-        );
-        const loadTimeMatch = stdoutData.match(
-          /Load Time: (\d+\.?\d*) seconds/
-        );
-
-        const desktopScreenshotMatch = stdoutData.match(
-          /Desktop screenshot: (.+)/
-        );
-
-        const mobileScreenshotMatch = stdoutData.match(
-          /Mobile screenshot: (.+)/
-        );
-
-        // Read screenshots if available.
-        const desktopScreenshotPath = desktopScreenshotMatch
-          ? path.join(desktopScreenshotMatch[1].trim())
-          : null;
-
-        const mobileScreenshotPath = mobileScreenshotMatch
-          ? path.join(mobileScreenshotMatch[1].trim())
-          : null;
-        
-       // Read files to ensure they exist and get the image data
-       let desktopScreenshot = null;
-       let mobileScreenshot = null;
-       
-       try {
-         if (desktopScreenshotPath && fs.existsSync(desktopScreenshotPath)) {
-           desktopScreenshot = fs.readFileSync(desktopScreenshotPath).toString('base64');
-           console.log(`Read desktop screenshot: ${desktopScreenshotPath}`);
-         }
-         
-         if (mobileScreenshotPath && fs.existsSync(mobileScreenshotPath)) {
-           mobileScreenshot = fs.readFileSync(mobileScreenshotPath).toString('base64');
-           console.log(`Read mobile screenshot: ${mobileScreenshotPath}`);
-         }
-       } catch (fileError) {
-         console.error("Error reading screenshot files:", fileError);
-       } 
-
-        // Parse issues found
-        const issuesSection = stdoutData.split("ISSUES FOUND:")[1];
-        const issuesList = issuesSection
-          ? issuesSection
-              .split("\n")
-              .filter((line) => line.trim().startsWith("•"))
-              .map((line) => line.trim().substring(2).trim())
-          : [];
-
-        // Save results - in a production app, you'd store this in a database
-        const analysisResults = {
-          url,
-          timestamp: new Date().toISOString(),
-          performanceScore: lighthouseMatch
-            ? parseFloat(lighthouseMatch[1])
-            : null,
-          loadTime: loadTimeMatch ? parseFloat(loadTimeMatch[1]) : null,
-          issues: issuesList,
-          rawOutput: stdoutData,
-          screenshots: {
-            desktop: desktopScreenshot,
-            mobile: mobileScreenshot,
-          },
-        };
-
-        // If user has credits, deduct one credit
-        const success = await req.services?.credits.deductCredits(userId as string, 1);
-
-        if (!success) {
-          res.status(HTTP_STATUS_CODE.PAYMENT_REQUIRED).json({
-            error: "Failed to deduct credits",
-            message:
-              "Could not deduct credits from your account. Please try again later.",
-          });
-          return;
+        const desktopPath = analysisData.screenshots.paths.desktop;
+        if (fs.existsSync(desktopPath)) {
+          const desktopBase64 = fs.readFileSync(desktopPath).toString('base64');
+          desktopScreenshot = `data:image/png;base64,${desktopBase64}`;
+          console.log(`Read desktop screenshot from file: ${desktopPath}`);
         }
-
-        // In a real app, you'd save this to a database
-        return res.status(HTTP_STATUS_CODE.OK).json({
-          success: true,
-          message: "Website analysis completed",
-          data: analysisResults,
-        });
-      } catch (parseError) {
-        return res.status(HTTP_STATUS_CODE.INTERNAL_SERVER_ERROR).json({
-          success: false,
-          message: "Failed to parse analysis results",
-          error: (parseError as Error).message,
-        });
+      } catch (fileError) {
+        console.error("Error reading desktop screenshot file:", fileError);
       }
+    }
+    
+    if (!mobileScreenshot && analysisData.screenshots?.paths?.mobile) {
+      try {
+        const mobilePath = analysisData.screenshots.paths.mobile;
+        if (fs.existsSync(mobilePath)) {
+          const mobileBase64 = fs.readFileSync(mobilePath).toString('base64');
+          mobileScreenshot = `data:image/png;base64,${mobileBase64}`;
+          console.log(`Read mobile screenshot from file: ${mobilePath}`);
+        }
+      } catch (fileError) {
+        console.error("Error reading mobile screenshot file:", fileError);
+      }
+    }
+
+    // Build final response object
+    const analysisResults = {
+      url: analysisData.url,
+      timestamp: new Date().toISOString(),
+      performanceScore: analysisData.lighthouse?.performanceScore || null,
+      loadTime: analysisData.loadTime || null,
+      issues: analysisData.issues || [],
+      screenshots: {
+        desktop: desktopScreenshot,
+        mobile: mobileScreenshot,
+      },
+    };
+
+    // If user has credits, deduct one credit
+    const success = await req.services?.credits.deductCredits(userId as string, 1);
+
+    if (!success) {
+      res.status(HTTP_STATUS_CODE.PAYMENT_REQUIRED).json({
+        error: "Failed to deduct credits",
+        message: "Could not deduct credits from your account. Please try again later.",
+      });
+      return;
+    }
+
+    res.status(HTTP_STATUS_CODE.OK).json({
+      success: true,
+      message: "Website analysis completed",
+      data: analysisResults,
     });
+    
   } catch (error) {
     next(error);
   }

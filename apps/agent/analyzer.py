@@ -1,6 +1,8 @@
 import os
+import sys
 import asyncio
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -85,6 +87,10 @@ class WebsiteAnalyzer:
         
         # Initialize AI analyzer
         self.ai_analyzer = AIScreenshotAnalyzer(self.config)
+        
+        # Track screenshot paths for output
+        self.desktop_screenshot_path = None
+        self.mobile_screenshot_path = None
 
     async def get_lighthouse_metrics(self, url):
         """Get Lighthouse performance metrics using Docker"""
@@ -275,6 +281,10 @@ class WebsiteAnalyzer:
             desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data
         )
 
+        # Track screenshot paths
+        self.desktop_screenshot_path = desktop_screenshot
+        self.mobile_screenshot_path = mobile_screenshot
+
         # Clean up temporary screenshots unless save_screenshots is True
         if not self.save_screenshots:
             self._cleanup_temp_screenshots(
@@ -352,6 +362,10 @@ class WebsiteAnalyzer:
             desktop_screenshot.rename(desktop_final)
             mobile_screenshot.rename(mobile_final)
 
+            # Store paths for output
+            self.desktop_screenshot_path = desktop_final
+            self.mobile_screenshot_path = mobile_final
+
             print(f"📸 Screenshots saved: {desktop_final.name}, {mobile_final.name}")
         except Exception as e:
             print(f"⚠️  Save warning: {e}")
@@ -386,19 +400,61 @@ class WebsiteAnalyzer:
         print("🐳 Docker not running, attempting to start...")
         
         try:
-            # Try to start Docker Desktop (macOS)
-            if os.path.exists("/Applications/Docker.app"):
-                print("🚀 Starting Docker Desktop...")
-                process = await asyncio.create_subprocess_exec(
-                    "open", "/Applications/Docker.app",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await process.communicate()
-                
-                # Wait for Docker to start (up to 60 seconds)
-                for i in range(12):  # 12 * 5 = 60 seconds
-                    await asyncio.sleep(5)
+            # Detect operating system
+            if sys.platform == "darwin":  # macOS
+                # Try to start Docker Desktop (macOS)
+                if os.path.exists("/Applications/Docker.app"):
+                    print("🚀 Starting Docker Desktop for macOS...")
+                    process = await asyncio.create_subprocess_exec(
+                        "open", "/Applications/Docker.app",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await process.communicate()
+                    
+                    # Wait for Docker to start (up to 60 seconds)
+                    for i in range(12):  # 12 * 5 = 60 seconds
+                        await asyncio.sleep(5)
+                        try:
+                            check_process = await asyncio.create_subprocess_exec(
+                                "docker", "info",
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE
+                            )
+                            stdout, stderr = await asyncio.wait_for(check_process.communicate(), timeout=5)
+                            
+                            if check_process.returncode == 0:
+                                print("✅ Docker started successfully!")
+                                return True
+                                
+                            print(f"⏳ Waiting for Docker to start... ({(i+1)*5}s)")
+                            
+                        except (asyncio.TimeoutError, Exception):
+                            continue
+            
+            elif sys.platform.startswith("linux"):  # Linux (including Ubuntu)
+                # Try with systemctl first (most common on modern Linux)
+                if os.path.exists("/usr/bin/systemctl") or os.path.exists("/bin/systemctl"):
+                    print("🚀 Starting Docker service via systemctl...")
+                    
+                    # First try without sudo (if user has proper permissions)
+                    try:
+                        systemctl_cmd = "systemctl"
+                        if not os.access("/var/run/docker.sock", os.W_OK):
+                            # Needs elevated permissions
+                            systemctl_cmd = "sudo systemctl"
+                            
+                        process = await asyncio.create_subprocess_exec(
+                            *systemctl_cmd.split(), "start", "docker",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+                    except Exception as e:
+                        print(f"Warning: systemctl start attempt failed: {e}")
+                        
+                    # Check if docker started
+                    await asyncio.sleep(3)
                     try:
                         check_process = await asyncio.create_subprocess_exec(
                             "docker", "info",
@@ -410,38 +466,40 @@ class WebsiteAnalyzer:
                         if check_process.returncode == 0:
                             print("✅ Docker started successfully!")
                             return True
+                    except Exception as e:
+                        print(f"Warning: Docker check failed: {e}")
+                
+                # Try with service command (older Ubuntu/Debian systems)
+                if os.path.exists("/usr/sbin/service") or os.path.exists("/sbin/service"):
+                    print("🚀 Trying to start Docker with service command...")
+                    try:
+                        service_cmd = "service"
+                        if not os.access("/var/run/docker.sock", os.W_OK):
+                            service_cmd = "sudo service"
                             
-                        print(f"⏳ Waiting for Docker to start... ({(i+1)*5}s)")
+                        process = await asyncio.create_subprocess_exec(
+                            *service_cmd.split(), "docker", "start",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
                         
-                    except (asyncio.TimeoutError, Exception):
-                        continue
-                
-                print("⚠️  Docker startup timeout - continuing without Lighthouse")
-                return False
-                
-            # Try alternative startup methods for Linux/other systems
-            elif os.path.exists("/usr/bin/systemctl"):
-                print("🚀 Starting Docker service via systemctl...")
-                process = await asyncio.create_subprocess_exec(
-                    "sudo", "systemctl", "start", "docker",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await process.communicate()
-                
-                # Check if it started
-                await asyncio.sleep(3)
-                check_process = await asyncio.create_subprocess_exec(
-                    "docker", "info",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await asyncio.wait_for(check_process.communicate(), timeout=5)
-                
-                if check_process.returncode == 0:
-                    print("✅ Docker started successfully!")
-                    return True
-                    
+                        # Check if docker started
+                        await asyncio.sleep(3)
+                        check_process = await asyncio.create_subprocess_exec(
+                            "docker", "info",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await asyncio.wait_for(check_process.communicate(), timeout=5)
+                        
+                        if check_process.returncode == 0:
+                            print("✅ Docker started successfully!")
+                            return True
+                    except Exception as e:
+                        print(f"Warning: service command attempt failed: {e}")
+            
+            # If we reached here, none of the methods worked
             print("⚠️  Could not start Docker automatically - continuing without Lighthouse")
             return False
             
@@ -450,26 +508,29 @@ class WebsiteAnalyzer:
             return False
 
 async def main():
-    import sys
-    
     # Load configuration from environment
     config = default_config
     config.validate()
     
     # Parse command line arguments
     save_screenshots = False
+    output_json = False
     args = sys.argv[1:]
+    
     if "--save-screenshots" in args:
         save_screenshots = True
         args.remove("--save-screenshots")
     
+    if "--json" in args:
+        output_json = True
+        args.remove("--json")
+    
     if len(args) != 1:
         print("Usage:")
-        print("  python analyzer.py <website_url>")
-        print("  python analyzer.py <website_url> --save-screenshots")
+        print("  python analyzer.py <website_url> [--save-screenshots] [--json]")
         print("\nExample:")
         print("  python analyzer.py https://example.com")
-        print("  python analyzer.py https://example.com --save-screenshots")
+        print("  python analyzer.py https://example.com --save-screenshots --json")
         print("\nConfiguration:")
         print(f"  Max browsers: {config.max_browsers}")
         print(f"  Max tabs per browser: {config.max_tabs_per_browser}")
@@ -493,31 +554,95 @@ async def main():
         chromium_pool=chromium_pool,
         config=config
     )
+    
+    desktop_path = None
+    mobile_path = None
+    
     try:
         results, load_time, lighthouse_data = await analyzer.analyze_website(url)
-        print("\n" + "=" * 60)
-        print("🎯 WEBSITE ANALYSIS RESULTS")
-        print("=" * 60)
-        print(f"🌐 URL: {url}")
-        print(f"⏱️  Load Time: {load_time:.1f} seconds")
-        if lighthouse_data and lighthouse_data.get("available"):
-            print(f"⚡ Lighthouse FCP: {lighthouse_data.get('fcp_seconds'):.1f} seconds")
-            print(f"📊 Performance Score: {lighthouse_data.get('performance_score')}/100")
-        print("\n📋 ISSUES FOUND:")
-        print("-" * 30)
+        
+        # Extract issues from the results text
+        issues_list = []
         if results.strip():
             for line in results.split("\n"):
                 if line.strip():
-                    print(f"• {line.strip()}")
+                    issues_list.append(line.strip())
+        
+        # Check for screenshot paths from the analyzer
+        if hasattr(analyzer, 'desktop_screenshot_path') and analyzer.desktop_screenshot_path:
+            desktop_path = str(analyzer.desktop_screenshot_path)
+        
+        if hasattr(analyzer, 'mobile_screenshot_path') and analyzer.mobile_screenshot_path:
+            mobile_path = str(analyzer.mobile_screenshot_path)
+        
+        # Create output structure
+        output_data = {
+            "url": url,
+            "loadTime": load_time,
+            "issues": issues_list,
+            "screenshots": {
+                "desktop": desktop_path,
+                "mobile": mobile_path
+            },
+            "lighthouse": {
+                "available": False
+            }
+        }
+        
+        # Add lighthouse data if available
+        if lighthouse_data and lighthouse_data.get("available"):
+            output_data["lighthouse"] = {
+                "available": True,
+                "performanceScore": lighthouse_data.get("performance_score"),
+                "fcpSeconds": lighthouse_data.get("fcp_seconds"),
+                "lcpSeconds": lighthouse_data.get("lcp_seconds"),
+                "clsValue": lighthouse_data.get("cls_value"),
+                "tbtMs": lighthouse_data.get("tbt_ms")
+            }
+        
+        if output_json:
+            # Output JSON result
+            print(json.dumps(output_data))
         else:
-            print("✅ No issues found!")
-        print("=" * 60)
-        if save_screenshots:
-            print("📸 Screenshots saved in ./screenshots/")
-        else:
-            print("🗑️  Temporary screenshots cleaned up")
+            # Output human-readable format for backward compatibility
+            print("\n" + "=" * 60)
+            print("🎯 WEBSITE ANALYSIS RESULTS")
+            print("=" * 60)
+            print(f"🌐 URL: {url}")
+            print(f"⏱️  Load Time: {load_time:.1f} seconds")
+            if lighthouse_data and lighthouse_data.get("available"):
+                print(f"⚡ Lighthouse FCP: {lighthouse_data.get('fcp_seconds'):.1f} seconds")
+                print(f"📊 Performance Score: {lighthouse_data.get('performance_score')}/100")
+            
+            if desktop_path:
+                print(f"Desktop screenshot: {desktop_path}")
+            if mobile_path:
+                print(f"Mobile screenshot: {mobile_path}")
+                
+            print("\nISSUES FOUND:")
+            print("-" * 30)
+            if issues_list:
+                for issue in issues_list:
+                    print(f"• {issue}")
+            else:
+                print("✅ No issues found!")
+            print("=" * 60)
+            if save_screenshots:
+                print("📸 Screenshots saved in ./screenshots/")
+            else:
+                print("🗑️  Temporary screenshots cleaned up")
+                
     except Exception as e:
-        print(f"❌ Analysis failed: {e}")
+        error_data = {
+            "error": True,
+            "message": str(e),
+            "url": url
+        }
+        
+        if output_json:
+            print(json.dumps(error_data))
+        else:
+            print(f"❌ Analysis failed: {e}")
     finally:
         await chromium_pool.close()
 

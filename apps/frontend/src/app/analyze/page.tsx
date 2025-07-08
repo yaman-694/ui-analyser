@@ -170,10 +170,12 @@ export default function AnalyzePage() {
               <div className="border border-gray-200 rounded-lg p-4 col-span-2">
                 <h4 className="text-lg font-medium mb-3">Desktop View</h4> 
                 {analysisResult.screenshots?.desktop ? (
-                  <div className="relative overflow-hidden rounded-xl border border-gray-300  max-h-[50vh] overflow-y-auto">
+                  <div className="relative overflow-hidden rounded-xl border border-gray-300 max-h-[50vh] overflow-y-auto">
                     <Image
                       src={analysisResult.screenshots.desktop}
                       alt="Desktop view of website"
+                      width={1200}
+                      height={800}
                       className="w-full h-auto object-cover"
                     />
                   </div>
@@ -192,6 +194,8 @@ export default function AnalyzePage() {
                     <Image
                       src={analysisResult.screenshots.mobile}
                       alt="Mobile view of website"
+                      width={600}
+                      height={1200}
                       className="w-full h-auto object-cover"
                     />
                   </div>

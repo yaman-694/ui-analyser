@@ -6,8 +6,10 @@ import os
 import base64
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
+import getpass
 
 load_dotenv()
 
@@ -54,6 +56,8 @@ class AIScreenshotAnalyzer:
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_key:
             raise ValueError("OPENAI_API_KEY not found in .env file")
+        if "GOOGLE_API_KEY" not in os.environ:
+            os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter your Google AI API key: ")
         
         self.llm = ChatOpenAI(
             model=self.config.openai_model,
