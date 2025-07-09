@@ -9,6 +9,7 @@
     "check-types": "turbo run check-types"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "prettier": "^3.6.0",
     "turbo": "^2.5.4",
     "typescript": "5.8.2"
@@ -20,5 +21,10 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "bullmq": "^5.56.1",
+    "cors": "^2.8.5",
+    "mongoose": "^8.16.1"
+  }
 }
