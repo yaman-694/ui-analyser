@@ -19,8 +19,23 @@ services:
     networks:
       - ui-analyzer-network
 
+  caddy:
+    image: caddy:latest
+    container_name: ui-analyzer-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - ui-analyzer-network
+
 volumes:
   database-data:
+  caddy-data:
+  caddy-config:
 
 networks:
   ui-analyzer-network:
