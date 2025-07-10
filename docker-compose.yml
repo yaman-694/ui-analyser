@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   database:
     image: mongo:latest
@@ -27,6 +29,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy-data:/data
       - caddy-config:/config
     networks:

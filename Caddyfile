@@ -1,0 +1,7 @@
+uianalyzer.com {
+	reverse_proxy host.docker.internal:3000
+}
+
+api.uianalyzer.com {
+	reverse_proxy host.docker.internal:3001
+}
