@@ -43,7 +43,6 @@ export class CreditsService {
         return;
       }
 
-
       const user = await User.findOne({ clerkId: userId }).select('dailyCreditsRefresh credits');
 
       if (!user) {

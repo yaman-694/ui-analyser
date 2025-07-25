@@ -21,4 +21,4 @@ export const HTTP_STATUS_CODE = {
 	GATEWAY_TIMEOUT: 504
 };
 
-export const DAILY_CREDITS_LIMIT = 5;
+export const DAILY_CREDITS_LIMIT = 1000;

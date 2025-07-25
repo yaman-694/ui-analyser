@@ -39,14 +39,10 @@ export default function AnalyzePage() {
     window.history.replaceState(null, "", newUrl.toString());
   }, []);
 
+ 
   useEffect(() => {
-    if (!url) {
-      router.push('/');
-      return;
-    }
 
     const isValid = urlSchema.safeParse({ url });
-
     async function performAnalysis() {
       try {
         // Special case for example.com - use dummy data
@@ -103,28 +99,30 @@ export default function AnalyzePage() {
   }, [url, router, resetURL]);
 
   if (!url) {
-    return null; // Will redirect in useEffect
+    router.push('/');
+    return null;
   }
-
+  
+  
   return (
     <div className="container mx-auto px-4 py-12 z-[]">
-      <h1 className="text-3xl font-bold mb-6 text-center mt-32 text-input">Website Analysis</h1>
+      <h1 className="mt-32 mb-6 text-3xl font-bold text-center text-input">Website Analysis</h1>
       
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-12">
-          <div className="w-16 h-16 border-4 border-t-input border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mb-4"></div>
+          <div className="w-16 h-16 mb-4 border-4 rounded-full border-t-input border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
           <p className="text-xl font-medium text-input">Analyzing {url}...</p>
-          <p className="text-sm text-input mt-2">This may take a few moments</p>
+          <p className="mt-2 text-sm text-input">This may take a few moments</p>
         </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+        <div className="px-4 py-3 mb-6 text-red-700 border border-red-200 rounded-md bg-red-50">
           <p className="font-medium">Error</p>
           <p>{error}</p>
           <button 
             onClick={() => router.push('/')}
-            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+            className="px-4 py-2 mt-4 text-white transition-colors bg-red-600 rounded-md hover:bg-red-700"
           >
             Try Again
           </button>
@@ -132,13 +130,13 @@ export default function AnalyzePage() {
       )}
 
       {!isLoading && !error && analysisResult && (
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Analysis Results for {analysisResult.url}</h2>
+        <div className="p-6 bg-white rounded-lg shadow-lg">
+          <h2 className="mb-4 text-2xl font-semibold">Analysis Results for {analysisResult.url}</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-2">
             {/* Performance Metrics */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="text-xl font-semibold mb-3">Performance Metrics</h3>
+            <div className="p-4 rounded-lg bg-gray-50">
+              <h3 className="mb-3 text-xl font-semibold">Performance Metrics</h3>
               <div className="space-y-2">
                 <p><span className="font-medium">Load Time:</span> {analysisResult.loadTime ? `${analysisResult.loadTime}s` : 'N/A'}</p>
                 <p><span className="font-medium">Performance Score:</span> {analysisResult.performanceScore ? `${analysisResult.performanceScore}/100` : 'N/A'}</p>
@@ -147,10 +145,10 @@ export default function AnalyzePage() {
             </div>
             
             {/* Issues Found */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="text-xl font-semibold mb-3">Issues Found</h3>
+            <div className="p-4 rounded-lg bg-gray-50">
+              <h3 className="mb-3 text-xl font-semibold">Issues Found</h3>
               {analysisResult.issues && analysisResult.issues.length > 0 ? (
-                <ul className="list-disc pl-5 space-y-1">
+                <ul className="pl-5 space-y-1 list-disc">
                   {analysisResult.issues.map((issue, index) => (
                     <li key={index}>{issue}</li>
                   ))}
@@ -163,11 +161,11 @@ export default function AnalyzePage() {
           
           {/* Screenshots */}
           <div className="mt-8">
-            <h3 className="text-xl font-semibold mb-4">Screenshots</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <h3 className="mb-4 text-xl font-semibold">Screenshots</h3>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               {/* Desktop Screenshot */}
-              <div className="border border-gray-200 rounded-lg p-4 col-span-2">
-                <h4 className="text-lg font-medium mb-3">Desktop View</h4> 
+              <div className="col-span-2 p-4 border border-gray-200 rounded-lg">
+                <h4 className="mb-3 text-lg font-medium">Desktop View</h4> 
                 {analysisResult.screenshots?.desktop ? (
                   <div className="relative overflow-hidden rounded-xl border border-gray-300 max-h-[50vh] overflow-y-auto">
                     <Image
@@ -175,19 +173,19 @@ export default function AnalyzePage() {
                       alt="Desktop view of website"
                       width={1200}
                       height={800}
-                      className="w-full h-auto object-cover"
+                      className="object-cover w-full h-auto"
                     />
                   </div>
                 ) : (
-                  <div className="bg-gray-100 rounded-xl flex items-center justify-center h-64">
+                  <div className="flex items-center justify-center h-64 bg-gray-100 rounded-xl">
                     <p className="text-gray-500">No desktop screenshot available</p>
                   </div>
                 )}
               </div>
               
               {/* Mobile Screenshot */}
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h4 className="text-lg font-medium mb-3">Mobile View</h4>
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <h4 className="mb-3 text-lg font-medium">Mobile View</h4>
                 {analysisResult.screenshots?.mobile ? (
                   <div className="relative overflow-hidden rounded-xl border border-gray-300 max-h-[60vh] overflow-y-auto">
                     <Image
@@ -195,11 +193,11 @@ export default function AnalyzePage() {
                       alt="Mobile view of website"
                       width={600}
                       height={1200}
-                      className="w-full h-auto object-cover"
+                      className="object-cover w-full h-auto"
                     />
                   </div>
                 ) : (
-                  <div className="bg-gray-100 rounded-xl flex items-center justify-center h-64">
+                  <div className="flex items-center justify-center h-64 bg-gray-100 rounded-xl">
                     <p className="text-gray-500">No mobile screenshot available</p>
                   </div>
                 )}
@@ -210,8 +208,8 @@ export default function AnalyzePage() {
           {/* Raw JSON (Expandable) */}
           <div className="mt-8">
             <details>
-              <summary className="cursor-pointer text-lg font-semibold mb-2">Raw Analysis Data</summary>
-              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-xs">
+              <summary className="mb-2 text-lg font-semibold cursor-pointer">Raw Analysis Data</summary>
+              <pre className="p-4 overflow-x-auto text-xs bg-gray-100 rounded-md">
                 {JSON.stringify(analysisResult, null, 2)}
               </pre>
             </details>
