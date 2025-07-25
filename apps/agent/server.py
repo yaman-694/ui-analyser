@@ -199,6 +199,7 @@ async def analyze_website(request: AnalysisRequest):
         return response_data
 
     except Exception as e:
+        print(f"❌ Analysis failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}",
