@@ -27,6 +27,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Jersey';
+  src: url('/fonts/PixelifySans-VariableFont_wght.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -69,6 +77,7 @@
   --font-body: 'FuturaPTBook', sans-serif;
   --font-growigh: 'Futura heavy', sans-serif;
   --font-logo: 'FuturaPTDemi', sans-serif;
+  --font-jersey: 'Jersey', sans-serif;
 }
 
 #background::after {
