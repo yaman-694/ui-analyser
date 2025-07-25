@@ -77,9 +77,8 @@ export default function AnalyzePage() {
         if (url) {
           const response = await analyzeWebsite({ url });
           
-          if (response.status !== 200) {
-            setError("Failed to analyze website");
-            toast.error("Failed to analyze website");
+          if (!response?.data?.success) {
+            setError(response.data.error);
             return;
           }
           
@@ -88,7 +87,7 @@ export default function AnalyzePage() {
         }
       } catch (err) {
         console.error("Error analyzing website:", err);
-        setError("An unexpected error occurred. Please try again.");
+        setError("An unexpected error occurred while analyzing the website");
         toast.error("An unexpected error occurred. Please try again.");
       } finally {
         setIsLoading(false);

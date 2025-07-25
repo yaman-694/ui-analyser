@@ -50,6 +50,16 @@ export const analyzeUIController = async (
     
     // Process API response
     const analysisData = response.data;
+
+    if (analysisData.lighthouse_error) {
+      console.error("Error from analyzer API:", analysisData.lighthouse_error);
+      res.status(HTTP_STATUS_CODE.OK).json({
+        success: false,
+        message: "Error analyzing website",
+        error: analysisData.lighthouse_error,
+      });
+      return;
+    }
     
     // Get screenshots from API response
     let desktopScreenshot = null;

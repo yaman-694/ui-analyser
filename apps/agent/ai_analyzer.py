@@ -16,10 +16,10 @@ load_dotenv()
 
 class AIScreenshotAnalyzer:
     """Handles AI-powered analysis of website screenshots using OpenAI Vision or Gemini Vision."""
-    
+
     # Supported AI providers
     SUPPORTED_PROVIDERS = ["openai", "gemini"]
-    
+
     # Response templates for analysis results
     RESPONSE_TEMPLATES = {
         "R1": "Users are not able to understand what the website is about at first glance.",
@@ -34,31 +34,35 @@ class AIScreenshotAnalyzer:
         "R10": "The website contains too much text, overwhelming users and affecting readability.",
         "R11": "Poor contrast between the text and background makes it difficult to read.",
         "R12": "There are alignment issues on the website, leading to a disorganized design.",
-        "R13": "Inconsistent spacing between elements is leading to a cluttered and unappealing design."
+        "R13": "Inconsistent spacing between elements is leading to a cluttered and unappealing design.",
     }
-    
+
     def __init__(self, config):
         """Initialize the AI analyzer with configuration."""
         self.config = config
-        self.provider = getattr(config, 'ai_provider', 'openai').lower()
-        
+        self.provider = getattr(config, "ai_provider", "openai").lower()
+
         if self.provider not in self.SUPPORTED_PROVIDERS:
-            raise ValueError(f"Unsupported AI provider: {self.provider}. Supported: {self.SUPPORTED_PROVIDERS}")
-        
+            raise ValueError(
+                f"Unsupported AI provider: {self.provider}. Supported: {self.SUPPORTED_PROVIDERS}"
+            )
+
         # Initialize the appropriate LLM based on provider
         if self.provider == "openai":
             self._init_openai()
         elif self.provider == "gemini":
             self._init_gemini()
-    
+
     def _init_openai(self):
         """Initialize OpenAI LLM"""
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_key:
             raise ValueError("OPENAI_API_KEY not found in .env file")
         if "GOOGLE_API_KEY" not in os.environ:
-            os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter your Google AI API key: ")
-        
+            os.environ["GOOGLE_API_KEY"] = getpass.getpass(
+                "Enter your Google AI API key: "
+            )
+
         self.llm = ChatOpenAI(
             model=self.config.openai_model,
             openai_api_key=self.openai_key,
@@ -66,39 +70,44 @@ class AIScreenshotAnalyzer:
             temperature=self.config.openai_temperature,
             seed=self.config.openai_seed,
         )
-    
+
     def _init_gemini(self):
         """Initialize Gemini LLM"""
         self.gemini_key = os.getenv("GOOGLE_API_KEY")
         if not self.gemini_key:
             raise ValueError("GOOGLE_API_KEY not found in .env file")
-        
+
         # Set default Gemini model if not specified in config
-        gemini_model = getattr(self.config, 'gemini_model', 'gemini-1.5-flash')
-        gemini_max_tokens = getattr(self.config, 'gemini_max_tokens', 1500)
-        gemini_temperature = getattr(self.config, 'gemini_temperature', 0.0)
-        
+        gemini_model = getattr(self.config, "gemini_model", "gemini-1.5-flash")
+        gemini_max_tokens = getattr(self.config, "gemini_max_tokens", 1500)
+        gemini_temperature = getattr(self.config, "gemini_temperature", 0.0)
+
         self.llm = ChatGoogleGenerativeAI(
             model=gemini_model,
             google_api_key=self.gemini_key,
             max_output_tokens=gemini_max_tokens,
             temperature=gemini_temperature,
         )
-    
+
     async def analyze_screenshots(
-        self, desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data=None
+        self,
+        desktop_screenshot,
+        mobile_screenshot,
+        url,
+        load_time,
+        lighthouse_data=None,
     ):
         """Use AI Vision (OpenAI or Gemini) to analyze screenshots against checklist"""
-        
+
         print(f"🤖 Using {self.provider.upper()} for AI analysis...")
-        
+
         # Convert images to base64
         with open(desktop_screenshot, "rb") as f:
             desktop_b64 = base64.b64encode(f.read()).decode()
-        
+
         with open(mobile_screenshot, "rb") as f:
             mobile_b64 = base64.b64encode(f.read()).decode()
-        
+
         # Use Lighthouse metrics if available, otherwise fall back to Playwright timing
         if lighthouse_data and lighthouse_data.get("available"):
             actual_load_time = lighthouse_data.get("fcp_seconds", load_time)
@@ -106,22 +115,22 @@ class AIScreenshotAnalyzer:
         else:
             actual_load_time = load_time
             performance_info = f" (Playwright timing)"
-        
+
         prompt = self._generate_analysis_prompt(actual_load_time, performance_info)
-        
+
         # Create messages based on provider
         if self.provider == "openai":
             messages = self._create_openai_messages(prompt, desktop_b64, mobile_b64)
         elif self.provider == "gemini":
             messages = self._create_gemini_messages(prompt, desktop_b64, mobile_b64)
-        
+
         try:
             response = await self.llm.ainvoke(messages)
             return response.content.strip()
         except Exception as e:
             print(f"❌ {self.provider.upper()} analysis failed: {e}")
             return "AI analysis not available"
-    
+
     def _create_openai_messages(self, prompt, desktop_b64, mobile_b64):
         """Create messages format for OpenAI Vision"""
         return [
@@ -145,7 +154,7 @@ class AIScreenshotAnalyzer:
                 ]
             )
         ]
-    
+
     def _create_gemini_messages(self, prompt, desktop_b64, mobile_b64):
         """Create messages format for Gemini Vision"""
         return [
@@ -159,7 +168,7 @@ class AIScreenshotAnalyzer:
                         },
                     },
                     {
-                        "type": "image_url", 
+                        "type": "image_url",
                         "image_url": {
                             "url": f"data:image/png;base64,{mobile_b64}",
                         },
@@ -167,14 +176,16 @@ class AIScreenshotAnalyzer:
                 ]
             )
         ]
-    
+
     def _generate_analysis_prompt(self, actual_load_time, performance_info):
         """Generate the AI analysis prompt with dynamic response templates"""
-        response_examples = "\n".join([
-            f"{key}. {template.format(load_time=actual_load_time) if 'load_time' in template else template}"
-            for key, template in self.RESPONSE_TEMPLATES.items()
-        ])
-        
+        response_examples = "\n".join(
+            [
+                f"{key}. {template.format(load_time=actual_load_time) if 'load_time' in template else template}"
+                for key, template in self.RESPONSE_TEMPLATES.items()
+            ]
+        )
+
         return f"""
         You are a UX/UI expert conducting a systematic website analysis. Analyze these screenshots methodically and return ONLY the failed criteria.
 
