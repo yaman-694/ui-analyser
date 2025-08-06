@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-from config import default_config
-from ai_analyzer import AIScreenshotAnalyzer
+from config.config import default_config
+from ai.ai_analyzer import AIScreenshotAnalyzer
 
 load_dotenv()
 
@@ -230,104 +230,214 @@ class WebsiteAnalyzer:
             return None
 
     async def analyze_website(self, url):
-        """Analyze website by taking screenshots and using AI vision"""
+        """
+        Analyze website by taking screenshots and using AI vision.
+        
+        Args:
+            url (str): The website URL to analyze
+            
+        Returns:
+            tuple: (analysis_results, load_time, lighthouse_data)
+        """
         print(f"🔍 Analyzing: {url}")
 
-        lighthouse_data = await self.get_lighthouse_metrics(url)
-        if "runtime_error" in lighthouse_data and lighthouse_data["runtime_error"].get(
-            "code"
-        ):
-            return (
-                {
-                    "lighthouse_error": lighthouse_data["runtime_error"].get(
-                        "message", "Unknown Lighthouse runtime error"
-                    )
-                },
-                0,
-                lighthouse_data,
-            )
+        # Step 1: Get Lighthouse performance metrics
+        lighthouse_data = await self._get_lighthouse_data(url)
+        
+        # Step 2: Initialize screenshot paths
+        screenshot_paths = self._setup_screenshot_paths()
+        
+        # Step 3: Capture screenshots and measure load time
+        screenshot_results = await self._capture_screenshots(url, screenshot_paths)
+        
+        if not screenshot_results['success']:
+            return screenshot_results['error_message'], screenshot_results['load_time'], lighthouse_data
+        
+        # Step 4: Perform AI analysis
+        print("🤖 Analyzing with AI...")
+        analysis_results = await self.ai_analyzer.analyze_screenshots(
+            screenshot_results['desktop_path'],
+            screenshot_results['mobile_path'],
+            url,
+            screenshot_results['load_time'],
+            lighthouse_data
+        )
+        
+        # Step 5: Handle screenshot cleanup/saving
+        self._handle_screenshot_persistence(screenshot_results['desktop_path'], screenshot_results['mobile_path'], url)
+        
+        return analysis_results, screenshot_results['load_time'], lighthouse_data
 
+    async def _get_lighthouse_data(self, url: str) -> dict:
+        """Get Lighthouse performance metrics with proper error handling."""
+        try:
+            lighthouse_data = await self.get_lighthouse_metrics(url)
+            
+            # Check for Lighthouse runtime errors
+            if lighthouse_data.get("runtime_error", {}).get("code"):
+                error_message = lighthouse_data["runtime_error"].get(
+                    "message", "Unknown Lighthouse runtime error"
+                )
+                print(f"⚠️  Lighthouse error: {error_message}")
+                
+            return lighthouse_data
+            
+        except Exception as e:
+            print(f"⚠️  Lighthouse analysis failed: {e}")
+            return {"available": False}
+
+    def _setup_screenshot_paths(self) -> dict:
+        """Setup screenshot file paths and ensure directory exists."""
         screenshots_dir = Path("screenshots")
         screenshots_dir.mkdir(exist_ok=True)
-        desktop_screenshot = screenshots_dir / "temp_desktop.png"
-        mobile_screenshot = screenshots_dir / "temp_mobile.png"
+        
+        return {
+            'desktop': screenshots_dir / "temp_desktop.png",
+            'mobile': screenshots_dir / "temp_mobile.png"
+        }
 
-        # Use ChromiumPool for browser/tab management
+    async def _capture_screenshots(self, url: str, screenshot_paths: dict) -> dict:
+        """
+        Capture desktop and mobile screenshots with proper error handling.
+        
+        Returns:
+            dict: {
+                'success': bool,
+                'load_time': float,
+                'desktop_path': Path,
+                'mobile_path': Path,
+                'error_message': str (if success=False)
+            }
+        """
+        # Ensure ChromiumPool is started
         await self.chromium_pool.start()
-        load_time = 0
-        website_accessible = False
+        
+        # Capture desktop screenshot first
+        desktop_result = await self._capture_single_screenshot(
+            url, screenshot_paths['desktop'], 'desktop'
+        )
+        
+        if not desktop_result['success']:
+            return {
+                'success': False,
+                'load_time': desktop_result['load_time'],
+                'error_message': desktop_result['error_message'],
+                'desktop_path': None,
+                'mobile_path': None
+            }
+        
+        # Capture mobile screenshot only if desktop was successful
+        mobile_result = await self._capture_single_screenshot(
+            url, screenshot_paths['mobile'], 'mobile'
+        )
+        
+        # If mobile fails, use desktop screenshot as fallback
+        if not mobile_result['success']:
+            print(f"⚠️  Mobile screenshot failed: {mobile_result['error_message']}")
+            try:
+                import shutil
+                shutil.copy2(screenshot_paths['desktop'], screenshot_paths['mobile'])
+                print("📱 Using desktop screenshot as mobile fallback")
+            except Exception as e:
+                print(f"⚠️  Fallback screenshot creation failed: {e}")
+        
+        return {
+            'success': True,
+            'load_time': desktop_result['load_time'],
+            'desktop_path': screenshot_paths['desktop'],
+            'mobile_path': screenshot_paths['mobile']
+        }
 
-        browser, desktop_page = await self.chromium_pool.acquire()
+    async def _capture_single_screenshot(self, url: str, screenshot_path: Path, device_type: str) -> dict:
+        """
+        Capture a single screenshot for desktop or mobile.
+        
+        Args:
+            url (str): Website URL
+            screenshot_path (Path): Path to save screenshot
+            device_type (str): 'desktop' or 'mobile'
+            
+        Returns:
+            dict: {
+                'success': bool,
+                'load_time': float,
+                'error_message': str (if success=False)
+            }
+        """
+        browser = None
+        page = None
+        load_time = 0.0
+        
         try:
-            print("📱 Taking desktop screenshot...")
-            await desktop_page.set_viewport_size(self.config.desktop_viewport)
+            # Acquire browser page from pool
+            browser, page = await self.chromium_pool.acquire()
+            
+            print(f"📱 Taking {device_type} screenshot...")
+            
+            # Configure page based on device type
+            if device_type == 'desktop':
+                await page.set_viewport_size(self.config.desktop_viewport)
+            else:  # mobile
+                await page.set_viewport_size(self.config.mobile_viewport)
+                await page.set_extra_http_headers({
+                    "User-Agent": self.config.mobile_user_agent
+                })
+            
+            # Navigate to URL and measure load time
             start_time = datetime.now()
-            await desktop_page.goto(
-                url, wait_until="networkidle", timeout=self.config.screenshot_timeout
+            await page.goto(
+                url, 
+                wait_until="networkidle", 
+                timeout=self.config.screenshot_timeout
             )
             end_time = datetime.now()
             load_time = (end_time - start_time).total_seconds()
-            await desktop_page.screenshot(path=desktop_screenshot, full_page=True)
-            website_accessible = True
+            
+            # Take screenshot
+            await page.screenshot(path=screenshot_path, full_page=True)
+            
+            return {
+                'success': True,
+                'load_time': load_time,
+                'error_message': None
+            }
+            
         except Exception as e:
-            print(f"❌ Website access failed: {e}")
-            # Check if it's a timeout error
-            if "Timeout" in str(e) or "timeout" in str(e).lower():
-                return self._handle_website_timeout(url), load_time, lighthouse_data
+            error_message = str(e)
+            print(f"❌ {device_type.capitalize()} screenshot failed: {error_message}")
+            
+            # Determine error type and return appropriate message
+            if "Timeout" in error_message or "timeout" in error_message.lower():
+                return {
+                    'success': False,
+                    'load_time': load_time,
+                    'error_message': self._handle_website_timeout(url)
+                }
             else:
-                return (
-                    self._handle_website_error(url, str(e)),
-                    load_time,
-                    lighthouse_data,
-                )
+                return {
+                    'success': False,
+                    'load_time': load_time,
+                    'error_message': self._handle_website_error(url, error_message)
+                }
+                
         finally:
-            await self.chromium_pool.release(desktop_page)
-
-        # Only try mobile screenshot if desktop was successful
-        if website_accessible:
-            browser, mobile_page = await self.chromium_pool.acquire()
-            try:
-                print("📱 Taking mobile screenshot...")
-                await mobile_page.set_viewport_size(self.config.mobile_viewport)
-                await mobile_page.set_extra_http_headers(
-                    {"User-Agent": self.config.mobile_user_agent}
-                )
-                await mobile_page.goto(
-                    url,
-                    wait_until="networkidle",
-                    timeout=self.config.screenshot_timeout,
-                )
-                await mobile_page.screenshot(path=mobile_screenshot, full_page=True)
-            except Exception as e:
-                print(f"⚠️  Mobile screenshot failed: {e}")
-                # Create a copy of desktop screenshot for mobile if mobile fails
+            # Always release the page back to pool
+            if page:
                 try:
-                    import shutil
+                    await self.chromium_pool.release(page)
+                except Exception as e:
+                    print(f"⚠️  Failed to release {device_type} page: {e}")
 
-                    shutil.copy2(desktop_screenshot, mobile_screenshot)
-                except:
-                    pass
-            finally:
-                await self.chromium_pool.release(mobile_page)
-
-        print("🤖 Analyzing with AI...")
-        results = await self.ai_analyzer.analyze_screenshots(
-            desktop_screenshot, mobile_screenshot, url, load_time, lighthouse_data
-        )
-
-        # Track screenshot paths
-        self.desktop_screenshot_path = desktop_screenshot
-        self.mobile_screenshot_path = mobile_screenshot
-
-        # Clean up temporary screenshots unless save_screenshots is True
+    def _handle_screenshot_persistence(self, desktop_path: Path, mobile_path: Path, url: str) -> None:
+        """Handle screenshot cleanup or saving based on configuration."""
+        # Store paths for output
+        self.desktop_screenshot_path = desktop_path
+        self.mobile_screenshot_path = mobile_path
+        
         if not self.save_screenshots:
-            self._cleanup_temp_screenshots(desktop_screenshot, mobile_screenshot)
+            self._cleanup_temp_screenshots(desktop_path, mobile_path)
         else:
-            self._save_screenshots_with_names(
-                desktop_screenshot, mobile_screenshot, url
-            )
-
-        return results, load_time, lighthouse_data
+            self._save_screenshots_with_names(desktop_path, mobile_path, url)
 
     def _handle_website_timeout(self, url):
         """Handle website timeout - likely blocked or slow website"""
