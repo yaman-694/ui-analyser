@@ -1,5 +1,6 @@
 import * as React from "react";
 
+
 const SvgWaves: React.FC<React.SVGProps<SVGSVGElement> & { className?: string }> = ({ className = "", ...props }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
