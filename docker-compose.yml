@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   database:
     image: mongo:latest
@@ -33,7 +31,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MONGODB_URI=mongodb://database:27017/ui-analyzer
-      - ANALYZER_API_URL=http://agent:5000
+      - ANALYZER_API_URL=http://agent:8000
     ports:
       - "3001:3001"
     depends_on:
@@ -51,9 +49,9 @@ services:
     container_name: ui-analyzer-agent
     restart: always
     env_file:
-      - ./apps/agent/.env
+      - .env
     expose:
-      - "5000"
+      - "8000"
     networks:
       - agent-network
 
