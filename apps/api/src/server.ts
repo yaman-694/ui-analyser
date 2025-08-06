@@ -11,7 +11,7 @@ import router from './routes';
 
 // Initialize the Express application
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.API_PORT || 3001;
 
 // For all other routes - parse JSON as usual
 app.use(express.json());
@@ -20,7 +20,7 @@ mongodbConnect();
 
 // Enable CORS for all routes
 app.use(cors({
-  origin: "*",
+  origin: process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL : '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));

@@ -6,7 +6,7 @@ services:
     container_name: ui-analyzer-mongo
     restart: always
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - database-data:/data/db
     networks:
@@ -17,9 +17,45 @@ services:
     container_name: ui-analyzer-redis
     restart: always
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - ui-analyzer-network
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: ui-analyzer-api
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGODB_URI=mongodb://database:27017/ui-analyzer
+      - ANALYZER_API_URL=http://agent:5000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - database
+      - redis
+      - agent
+    networks:
+      - ui-analyzer-network
+      - agent-network
+
+  agent:
+    build:
+      context: ./apps/agent
+      dockerfile: Dockerfile
+    container_name: ui-analyzer-agent
+    restart: always
+    env_file:
+      - ./apps/agent/.env
+    expose:
+      - "5000"
+    networks:
+      - agent-network
 
   caddy:
     image: caddy:latest
@@ -44,3 +80,5 @@ volumes:
 
 networks:
   ui-analyzer-network:
+  agent-network:
+    internal: true # This makes the network only accessible internally

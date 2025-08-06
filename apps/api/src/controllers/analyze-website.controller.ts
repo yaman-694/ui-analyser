@@ -71,12 +71,6 @@ export const analyzeUIController = async (
   try {
     // Check for required environment variables
     const apiUrl = process.env.ANALYZER_API_URL || 'http://localhost:8000';
-    const apiKey = process.env.AGENT_API_KEY;
-    
-    if (!apiKey) {
-      console.warn("ANALYZER_API_KEY not set in environment, API calls may fail if authentication is required");
-    }
-    
     console.log(`Making request to analyzer API at ${apiUrl} for URL: ${url}`);
     
     // Make request to the FastAPI analyzer service with timeout
@@ -89,7 +83,6 @@ export const analyzeUIController = async (
       { 
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey || ''
         },
         timeout: 300000, // 5 minutes timeout (matches agent server)
       }
@@ -110,7 +103,7 @@ export const analyzeUIController = async (
         success: false,
         message: errorResponse.message,
         error: errorResponse.error_code,
-        timestamp: errorResponse.timestamp,
+      timestamp: errorResponse.timestamp,
       });
       return;
     }
