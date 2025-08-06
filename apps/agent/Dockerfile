@@ -35,8 +35,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Expose the specified port for FastAPI
 EXPOSE $PORT
 
-# Start the application with Uvicorn in production mode, using environment variable references
-CMD ["uvicorn", "src.main:app", "--log-level", "info", "--host", "0.0.0.0" , "--port", "8000"]
+# Start the application with FastAPI in production mode, using environment variable references
+CMD ["fastapi", "run", "src/main.py"]
 
 
 
