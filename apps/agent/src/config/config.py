@@ -24,7 +24,7 @@ class Config:
     auto_start_docker: bool = True  # Automatically start Docker if not running
 
     # AI Configuration
-    ai_provider: str = "gemini"  # "openai" or "gemini"
+    ai_provider: str = "openai"  # "openai" or "gemini"
 
     # OpenAI Configuration
     openai_model: str = "gpt-4o"
