@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import json
-import shutil
+import httpx
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -106,17 +106,16 @@ class WebsiteAnalyzer:
         self.mobile_screenshot_path = None
 
     async def get_lighthouse_metrics(self, url):
-        """Get Lighthouse performance metrics using Docker"""
-        print("⚡ Running Lighthouse analysis...")
+        """Get Lighthouse performance metrics using PageSpeed Insights (PSI) only."""
+        print("⚡ Running Lighthouse analysis (PSI)...")
 
-        # Ensure Docker is running
-        if not await self._ensure_docker_running():
-            print("⚠️  Lighthouse analysis skipped - Docker unavailable")
+        if os.getenv("LIGHTHOUSE_MODE", "psi").lower() == "disabled":
+            print("ℹ️  Lighthouse disabled via LIGHTHOUSE_MODE=disabled")
             return {"available": False}
 
         try:
-            # Run Lighthouse audit via Docker
-            result = await self._run_lighthouse_audit(url)
+            # Run Lighthouse audit via PSI
+            result = await self._run_lighthouse_audit_psi(url)
 
             if result:
                 # Extract metrics from Lighthouse response structure
@@ -177,65 +176,47 @@ class WebsiteAnalyzer:
             return {"available": False}
 
     async def _run_lighthouse_audit(self, url):
-        """Execute Lighthouse audit using Docker"""
-        print(f"� Running Lighthouse audit for {url}...")
+        """Execute Lighthouse audit using PSI only (wrapper)."""
+        print(f"� Running Lighthouse audit for {url} (PSI)...")
+        return await self._run_lighthouse_audit_psi(url)
+
+    async def _run_lighthouse_audit_psi(self, url: str):
+        """Run Lighthouse via Google PageSpeed Insights API.
+        Returns the `lighthouseResult` object or None.
+        """
+        api_key = os.getenv("PSI_API_KEY")
+        base_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+        params = {
+            "url": url,
+            "strategy": "mobile",  # can be parameterized later
+            "category": "performance",
+        }
+        if api_key:
+            params["key"] = api_key
 
         try:
-            # Build Docker command for Lighthouse audit
-            cmd = [
-                "docker",
-                "run",
-                "--rm",
-                "femtopixel/google-lighthouse",
-                "lighthouse",
-                url,
-                "--only-categories=performance",
-                "--output=json",
-                "--quiet",
-                "--chrome-flags=--headless --no-sandbox --disable-dev-shm-usage",
-            ]
-
-            # Execute with timeout protection
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.config.lighthouse_timeout
-            )
-
-            if process.returncode == 0:
-                output = stdout.decode().strip()
-
-                try:
-                    lighthouse_data = json.loads(output)
-                    print(f"✅ Lighthouse audit completed successfully")
-                    return lighthouse_data
-                except json.JSONDecodeError:
-                    # Try to extract JSON from mixed output
-                    json_start = output.find("{")
-                    if json_start != -1:
-                        lighthouse_data = json.loads(output[json_start:])
-                        print(f"✅ Lighthouse audit completed successfully")
-                        return lighthouse_data
-
-                    print(f"❌ Could not parse Lighthouse JSON output")
+            timeout = httpx.Timeout(self.config.lighthouse_timeout)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(base_url, params=params)
+                if resp.status_code != 200:
+                    print(
+                        f"❌ PSI error: {resp.status_code} {resp.text[:200]} (did you set PSI_API_KEY?)"
+                    )
                     return None
-            else:
-                error_msg = stderr.decode().strip()
-                print(f"❌ Lighthouse failed: {error_msg}")
-                return None
-
-        except asyncio.TimeoutError:
+                data = resp.json()
+                result = data.get("lighthouseResult")
+                if not result:
+                    print("❌ PSI response missing lighthouseResult")
+                    return None
+                print("✅ PSI Lighthouse audit completed successfully")
+                return result
+        except httpx.TimeoutException:
             print(
-                f"❌ Lighthouse audit timed out after {self.config.lighthouse_timeout} seconds"
+                f"❌ PSI audit timed out after {self.config.lighthouse_timeout} seconds"
             )
-            return None
-        except json.JSONDecodeError as e:
-            print(f"❌ Failed to parse Lighthouse JSON output: {e}")
             return None
         except Exception as e:
-            print(f"❌ Lighthouse audit failed: {e}")
+            print(f"❌ PSI request failed: {e}")
             return None
 
     async def analyze_website(self, url):
