@@ -15,10 +15,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { getCurrentUser } from "../../../../api-lists";
 import { Toast } from "@/components/ui/toast";
 import { urlSchema } from "@/utils/validators";
 import { useAuth } from "@clerk/nextjs";
+import { getCurrentUser } from "../../../../api-lists";
 
 // Define the user type
 interface User {

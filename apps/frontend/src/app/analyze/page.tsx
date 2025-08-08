@@ -1,6 +1,7 @@
 "use client";
 
 import { urlSchema } from '@/utils/validators';
+import { useAuth } from '@clerk/nextjs';
 import Image, { StaticImageData } from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -8,7 +9,6 @@ import { toast } from 'react-hot-toast';
 import { analyzeWebsite } from '../../../api-lists';
 import DesktopDummy from "../analyze/_dummy/desktop-dummy.png";
 import MobileDummy from "../analyze/_dummy/mobile-dummy.png";
-import { useAuth } from '@clerk/nextjs';
 
 
 interface AnalysisResult {
