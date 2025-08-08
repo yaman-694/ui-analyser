@@ -20,7 +20,19 @@ mongodbConnect();
 
 // Enable CORS for all routes
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL : '*',
+  origin: (origin, callback) => {
+    const isProd = process.env.NODE_ENV === 'production';
+    // Allow all in dev and non-browser requests (no origin header)
+    if (!isProd || !origin) return callback(null, true);
+
+    // In prod, read allowed origins from env: CLIENT_URLS (comma-separated) or CLIENT_URL (single)
+    const raw = process.env.CLIENT_URLS || process.env.CLIENT_URL || '';
+    const allowedOrigins = raw.split(',').map(s => s.trim()).filter(Boolean);
+
+    return allowedOrigins.includes(origin)
+      ? callback(null, true)
+      : callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
