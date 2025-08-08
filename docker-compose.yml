@@ -54,6 +54,9 @@ services:
     shm_size: "1g"
     expose:
       - "8000"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       # Ensure Chromium runs smoothly in containerized env
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
@@ -89,4 +92,4 @@ volumes:
 networks:
   ui-analyzer-network:
   agent-network:
-    internal: true # This makes the network only accessible internally
+  # Note: do not set 'internal: true' so agent has internet access for Playwright
