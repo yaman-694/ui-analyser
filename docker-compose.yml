@@ -50,8 +50,18 @@ services:
     restart: always
     env_file:
       - .env
+    # Allocate larger shared memory for Chromium to avoid crashes
+    shm_size: "1g"
     expose:
       - "8000"
+    environment:
+      # Ensure Chromium runs smoothly in containerized env
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+    # Add necessary kernel capabilities for sandbox if needed; otherwise use --no-sandbox in code
+    # cap_add:
+    #   - SYS_ADMIN
     networks:
       - agent-network
 

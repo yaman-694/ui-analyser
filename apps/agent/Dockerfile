@@ -21,16 +21,28 @@ RUN uv sync
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-bookworm AS production
 
-RUN useradd --create-home appuser
-USER appuser
-
+# Workdir first
 WORKDIR /app
 
-COPY /src src
+# Copy virtual env from builder and app sources
 COPY --from=builder /app/.venv .venv
+COPY /src src
 
-# Set up environment variables for production
+# Ensure venv is on PATH for subsequent steps
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Install Playwright browsers and required system dependencies at build-time
+# This avoids runtime downloads which can fail on internal-only networks
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python -m pip install --no-cache-dir --upgrade pip && \
+    python -m playwright install --with-deps chromium && \
+    mkdir -p ${PLAYWRIGHT_BROWSERS_PATH} && \
+    chown -R root:root ${PLAYWRIGHT_BROWSERS_PATH}
+
+# Drop privileges after installing system-level deps
+RUN useradd --create-home appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
 # Expose the specified port for FastAPI
 EXPOSE $PORT
