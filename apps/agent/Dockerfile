@@ -32,10 +32,10 @@ COPY /src src
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Install Playwright browsers and required system dependencies at build-time
-# This avoids runtime downloads which can fail on internal-only networks
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN python -m pip install --no-cache-dir --upgrade pip && \
-    python -m playwright install --with-deps chromium && \
+# Use the venv python (pip may not exist in uv-created venv)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    DEBIAN_FRONTEND=noninteractive
+RUN /app/.venv/bin/python -m playwright install --with-deps chromium && \
     mkdir -p ${PLAYWRIGHT_BROWSERS_PATH} && \
     chown -R root:root ${PLAYWRIGHT_BROWSERS_PATH}
 
