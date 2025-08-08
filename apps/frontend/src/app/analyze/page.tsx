@@ -4,10 +4,11 @@ import { urlSchema } from '@/utils/validators';
 import Image, { StaticImageData } from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from 'react-hot-toast';
 import { analyzeWebsite } from '../../../api-lists';
 import DesktopDummy from "../analyze/_dummy/desktop-dummy.png";
 import MobileDummy from "../analyze/_dummy/mobile-dummy.png";
+import { useAuth } from '@clerk/nextjs';
 
 
 interface AnalysisResult {
@@ -32,6 +33,7 @@ export default function AnalyzePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   const resetURL = useCallback(() => {
     const newUrl = new URL(window.location.href);
@@ -41,15 +43,23 @@ export default function AnalyzePage() {
 
  
   useEffect(() => {
-
     const isValid = urlSchema.safeParse({ url });
     async function performAnalysis() {
       try {
+        if (!isLoaded) return; // wait for auth to load
+        if (!isSignedIn) {
+          toast.error("Please sign in to analyze a website.");
+          router.push('/');
+          return;
+        }
+        // Determine normalized URL using zod (ensures protocol when missing)
+        const normalizedUrl = urlSchema.parse({ url }).url;
+
         // Special case for example.com - use dummy data
-        if (url === 'example.com' || url === 'https://example.com') {
+        if (normalizedUrl === 'https://example.com') {
           // Create dummy data with the specified screenshot paths
           setAnalysisResult({
-            url: 'https://example.com',
+            url: normalizedUrl,
             timestamp: new Date().toISOString(),
             performanceScore: 95,
             loadTime: 1.2,
@@ -71,7 +81,8 @@ export default function AnalyzePage() {
         
         // For all other URLs, make the actual API call
         if (url) {
-          const response = await analyzeWebsite({ url });
+          const token = await getToken({ template: "default" }).catch(() => undefined);
+          const response = await analyzeWebsite({ url: normalizedUrl }, token ? { token } : undefined);
           
           if (!response?.data?.success) {
             setError(response.data.error);
@@ -96,7 +107,7 @@ export default function AnalyzePage() {
       resetURL();
       router.push('/');
     }
-  }, [url, router, resetURL]);
+  }, [url, router, resetURL, isLoaded, isSignedIn, getToken]);
 
   if (!url) {
     router.push('/');
@@ -105,7 +116,7 @@ export default function AnalyzePage() {
   
   
   return (
-    <div className="container mx-auto px-4 py-12 z-[]">
+  <div className="container mx-auto px-4 py-12">
       <h1 className="mt-32 mb-6 text-3xl font-bold text-center text-input">Website Analysis</h1>
       
       {isLoading && (

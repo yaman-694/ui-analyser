@@ -81,7 +81,7 @@
 }
 
 #background::after {
-  background-image: url('/image/texture.png ');
+  background-image: url('/image/texture.png');
   background-size: cover;
   background-position: center;
   content: '';

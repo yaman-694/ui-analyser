@@ -1,9 +1,9 @@
 import {
-  SignInButton,
-  SignOutButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
+    SignInButton,
+    SignOutButton,
+    SignUpButton,
+    SignedIn,
+    SignedOut,
 } from "@clerk/nextjs";
 import Link from "next/link";
 

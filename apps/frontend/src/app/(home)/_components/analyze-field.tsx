@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { getCurrentUser } from "../../../../api-lists";
 import { Toast } from "@/components/ui/toast";
 import { urlSchema } from "@/utils/validators";
+import { useAuth } from "@clerk/nextjs";
 
 // Define the user type
 interface User {
@@ -30,6 +31,7 @@ export function AnalyzeField() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   const form = useForm<z.infer<typeof urlSchema>>({
     resolver: zodResolver(urlSchema),
@@ -40,7 +42,7 @@ export function AnalyzeField() {
 
   function onSubmit(data: z.infer<typeof urlSchema>) {
 
-    if (currentUser === null) {
+  if (!isSignedIn) {
       Toast({ success: false, message: "Please log in to analyze a website." });
       return;
     }
@@ -67,14 +69,20 @@ export function AnalyzeField() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await getCurrentUser();
+        if (!isLoaded || !isSignedIn) {
+          setCurrentUser(null);
+          return;
+        }
+        const token = await getToken({ template: "default" }).catch(() => undefined);
+        const response = await getCurrentUser(token ? { token } : undefined);
         setCurrentUser(response.data.data);
       } catch (error) {
         console.error('Error fetching user:', error);
+        setCurrentUser(null);
       }
     };
     fetchUser();
-  }, []);
+  }, [isLoaded, isSignedIn, getToken]);
 
   return (
     <div className="w-full max-w-3xl px-5 mx-auto mt-16">
@@ -113,7 +121,7 @@ export function AnalyzeField() {
         </form>
       </Form>
       
-      {currentUser && (
+  {isSignedIn && currentUser && (
         <div className="w-full flex justify-end mt-3">
           <div className="text-sm text-input font-medium px-4 py-1.5 bg-[#3A210620] rounded-full">
             {currentUser.credits} daily credits left

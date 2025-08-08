@@ -9,13 +9,21 @@ const apiClient: AxiosInstance = axios.create({
 });
 
 apiClient.interceptors.request.use(async (config) => {
+	// Server-side SSR support: attach cookie-derived token if available
 	const authContent = await getAuthContent();
 	if (authContent) config.headers.Authorization = authContent;
 	return config;
 });
 
-export const analyzeWebsite = (payload: { url: string }): Promise<AxiosResponse> =>
-	apiClient.post("/ai/analyze-ui", payload);
+export const analyzeWebsite = (
+	payload: { url: string },
+	opts?: { token?: string }
+): Promise<AxiosResponse> =>
+	apiClient.post("/ai/analyze-ui", payload, {
+		headers: opts?.token ? { Authorization: `Bearer ${opts.token}` } : undefined,
+	});
 
-export const getCurrentUser = (): Promise<AxiosResponse> =>
-	apiClient.get("/user/get-current-user");
+export const getCurrentUser = (opts?: { token?: string }): Promise<AxiosResponse> =>
+	apiClient.get("/user/get-current-user", {
+		headers: opts?.token ? { Authorization: `Bearer ${opts.token}` } : undefined,
+	});
