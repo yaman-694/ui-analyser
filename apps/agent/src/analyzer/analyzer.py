@@ -285,11 +285,14 @@ class WebsiteAnalyzer:
     def _setup_screenshot_paths(self) -> dict:
         """Setup screenshot file paths and ensure directory exists."""
         screenshots_dir = Path("screenshots")
-        screenshots_dir.mkdir(exist_ok=True)
+        # Ensure parent directories exist (robust on first run in fresh containers)
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use unique temp names per request to avoid races across concurrent requests
+        uid = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         return {
-            "desktop": screenshots_dir / "temp_desktop.png",
-            "mobile": screenshots_dir / "temp_mobile.png",
+            "desktop": screenshots_dir / f"temp_{uid}_desktop.png",
+            "mobile": screenshots_dir / f"temp_{uid}_mobile.png",
         }
 
     async def _capture_screenshots(self, url: str, screenshot_paths: dict) -> dict:
@@ -385,7 +388,9 @@ class WebsiteAnalyzer:
             # Navigate to URL and measure load time
             start_time = datetime.now()
             await page.goto(
-                url, wait_until="networkidle", timeout=self.config.screenshot_timeout
+                url,
+                wait_until="domcontentloaded",
+                timeout=self.config.screenshot_timeout,
             )
             end_time = datetime.now()
             load_time = (end_time - start_time).total_seconds()
