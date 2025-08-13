@@ -49,7 +49,3 @@ EXPOSE $PORT
 
 # Start the application with FastAPI in production mode, using environment variable references
 CMD ["fastapi", "run", "src/main.py"]
-
-
-
-
