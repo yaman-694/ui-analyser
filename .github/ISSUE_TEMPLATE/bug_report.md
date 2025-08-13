@@ -4,25 +4,26 @@ about: Create a report to help us improve
 labels: bug
 ---
 
-## Describe the bug
-A clear and concise description of what the bug is.
+### Issue Summary
+A summary of the issue. This needs to be a clear detailed-rich summary.
 
-## To Reproduce
-Steps to reproduce the behavior:
-1. ...
-2. ...
+### Steps to Reproduce
+1. (for example) Went to ...
+2. Clicked on...
+3. ...
 
-## Expected behavior
-What you expected to happen.
+Any other relevant information. For example, why do you consider this a bug and what did you expect to happen instead?
 
-## Logs/screenshots/demo video(if applicable)
-Paste relevant logs or screenshots.
+### Actual Results
+- What's happening right now that is different from what is expected
 
-## Environment
-- OS:
-- Node version:
-- Python version:
-- Docker? (yes/no)
+### Expected Results
+- This is an ideal result that the system should get after the tests are performed
 
-## Additional context
-Add any other context about the problem here.
+### Technical details
+- Browser version, screen recording, console logs, network requests: You can make a recording with [Bird Eats Bug](https://birdeatsbug.com/).
+- Node.js version
+- Anything else that you think could be an issue.
+
+### Evidence
+- How was this tested? This is quite mandatory in terms of bugs. Providing evidence of your testing with screenshots or/and videos is an amazing way to prove the bug and a troubleshooting chance to find the solution.
