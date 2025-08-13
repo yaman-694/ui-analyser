@@ -6,6 +6,7 @@ import {
     SignedOut,
 } from "@clerk/nextjs";
 import Link from "next/link";
+import Github from "./github";
 
 export default function Header() {
   return (
@@ -18,6 +19,9 @@ export default function Header() {
           UI Analyzer
         </Link>
         <div className="flex items-center gap-4">
+          <Link href={"https://github.com/yaman-694/ui-analyser"} target="_blank" rel="noopener noreferrer" className="md:px-2">
+            <Github className="h-9 w-9" />
+          </Link>
           <SignedOut>
             <SignInButton mode="modal">
               <button className="px-6 py-2 bg-white rounded-full text-black font-medium hover:bg-white/90 transition">
