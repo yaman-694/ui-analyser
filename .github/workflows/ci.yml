@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root deps
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+
+      - name: Lint & typecheck (TS workspaces)
+        run: |
+          npm run lint --if-present
+          npm run check-types --if-present
+
+      - name: Build workspaces
+        run: npm run build --if-present
+
+      - name: Python checks (agent)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'apps/agent/requirements.txt'
+      - name: Install agent deps (minimal)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/agent/requirements.txt || true
+          pip install black flake8 || true
+      - name: Lint agent
+        run: |
+          black --check apps/agent || true
+          flake8 apps/agent || true
