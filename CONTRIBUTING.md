@@ -37,7 +37,7 @@ npm i
 - REDIS_PORT=6379
 - ANALYZER_API_URL=http://localhost:8000
 - CLIENT_URLS=http://localhost:3000
-- CLERK_PEM_PRIVATE_KEY
+- CLERK_SECRET_KEY
 - WEBHOOK_SECRET
 - For the agent: OPENAI_API_KEY or GOOGLE_API_KEY, and optionally PSI_API_KEY
 

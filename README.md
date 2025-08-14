@@ -1,7 +1,10 @@
 ## UI Analyzer
 
-AI-powered website UI analysis platform. Monorepo with:
+AI-powered website UI analysis platform.
 
+![UI Analyzer](public/hero.png)
+
+Mono Repo:
 - apps/frontend: Next.js 15 + Clerk auth
 - apps/api: Express + TypeScript (MongoDB + Redis)
 - apps/agent: FastAPI + Playwright + LLM (OpenAI or Gemini)
@@ -38,33 +41,46 @@ AI-powered website UI analysis platform. Monorepo with:
 ## Environment variables
 Create a .env at the repo root (docker-compose reads it; Turbo also forwards some envs).
 
-- Frontend
+- Frontend (Need to added in the apps/frontend dir .env)
+```
 	- NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: Clerk publishable key
+	- CLERK_SECRET_KEY: Clerk secret key
 	- NEXT_PUBLIC_BASE_URL: e.g., http://localhost:3000
 	- NEXT_PUBLIC_API_URL: API origin, e.g., http://localhost:3001
+```
 
-- API (apps/api)
+- API (Need to added in the apps/api dir .env)
+```
 	- API_PORT: default 3001
 	- MONGODB_URI: e.g., mongodb://localhost:27017/ui-analyzer
 	- REDIS_HOST: default localhost (redis in Docker: redis)
-	- REDIS_PORT: default 6379
+	- REDIS_PORT: default 6380 (if running redis in docker instead 6379)
 	- REDIS_PASSWORD: optional
 	- ANALYZER_API_URL: e.g., http://localhost:8000 (or http://agent:8000 in Docker)
-	- CLIENT_URL or CLIENT_URLS: allowed CORS origins (comma-separated in production)
-	- CLERK_PEM_PRIVATE_KEY: used by auth middleware verifyToken
+	- CLIENT_URLS: allowed CORS origins (comma-separated in production)
+	- CLERK_SECRET_KEY: used by auth middleware verifyToken
 	- WEBHOOK_SECRET: Clerk webhook (Svix) secret for /api/v1/webhook/clerk
+```
 
-- Agent (apps/agent)
+- Agent (Need to added in the apps/agent dir .env)
+```
 	- OPENAI_API_KEY or GOOGLE_API_KEY (choose one provider)
-	- LIGHTHOUSE_MODE: psi (default) or disabled
-	- PSI_API_KEY: optional, enables Lighthouse metrics via PSI
+	- PSI_API_KEY: enables Lighthouse metrics via PSI
+```
 
-Note: The agent defaults to OpenAI. If using OpenAI, set OPENAI_API_KEY. To switch to Gemini, change ai_provider in apps/agent/src/config/config.py and set GOOGLE_API_KEY.
+Note: The agent defaults to OpenAI. If using OpenAI, set OPENAI_API_KEY. To switch to Gemini, change ai_provider in `apps/agent/src/config/config.py` and set GOOGLE_API_KEY.
 
 ---
 
-## Run with Docker (recommended)
-This starts MongoDB, Redis, API, Agent, and Caddy (reverse proxy).
+## Run with Docker
+This starts MongoDB, Redis, api and agent (reverse proxy).
+
+*Note: Need to run frontend seperately using 
+
+```bash
+cd app/fronted
+npm run dev
+```
 
 ```bash
 # 1) Ensure your .env has required keys (see above)
@@ -79,19 +95,18 @@ docker compose up -d --build
 
 Notes
 - docker-compose wires API -> Agent via ANALYZER_API_URL=http://agent:8000
-- Caddy reverse-proxies api.uianalyzer.in -> api:3001 (binds :80/:443). Adjust Caddyfile for your domain.
 
 ---
 
 ## Local development (Turbo monorepo)
-You can mix Docker for infra (DB/Redis/Agent) with local Node/Next dev.
+You can mix Docker for infra (DB/Redis) with local Node/Next dev.
 
 ```bash
 # 0) Install dependencies at repo root
 npm i
 
-# 1) Start infra with Docker (Mongo + Redis) and (optionally) the Agent
-docker compose up -d database redis agent
+# 1) Start infra with Docker (Mongo + Redis)
+docker compose up -d database redis
 
 # 2) In another terminal, run apps in dev
 npm run dev
@@ -99,10 +114,9 @@ npm run dev
 # Apps
 # - apps/frontend: Next.js dev on :3000
 # - apps/api: Express on :3001
-# - apps/agent: use Docker container on :8000 (or run locally; see below)
 ```
 
-Run the agent locally instead of Docker
+Run the agent locally (Cannot run agent in docker if api is in local because agent is in internal docker network)
 ```bash
 # Python 3.13 venv (uv or venv/pip). With uv (optional):
 # pipx/uv users: uv venv && uv pip install -r apps/agent/requirements.txt
@@ -158,7 +172,7 @@ Credits and users
 
 ## CORS and auth
 - In dev, all origins are allowed; in production, set CLIENT_URLS (comma-separated) or CLIENT_URL for the API.
-- API expects a Bearer token from Clerk (verifyToken uses CLERK_PEM_PRIVATE_KEY).
+- API expects a Bearer token from Clerk (verifyToken uses CLERK_SECRET_KEY).
 
 ---
 
@@ -178,16 +192,17 @@ Per app
 ---
 
 ## Webhooks (Clerk)
-- Point Clerk webhooks to: POST {API_ORIGIN}/api/v1/webhook/clerk
+- Point Clerk webhooks to: POST `{API_ORIGIN}/api/v1/webhook/clerk`
 - Use the same WEBHOOK_SECRET in both Clerk and your API .env
+- Use ngrok or local tunneling to create `API_ORIGIN` and register in the webhook.
 
 ---
 
 ## Troubleshooting
 - Playwright/Chromium crashes in Docker: the compose sets shm_size: 1g and disables sandbox flags; ensure agent has internet.
-- 401 Unauthorized: ensure Authorization header is present (Clerk) and CLERK_PEM_PRIVATE_KEY is set.
+- 401 Unauthorized: ensure Authorization header is present (Clerk) and CLERK_SECRET_KEY is set.
 - CORS in production: set CLIENT_URLS with your frontend origin(s).
-- No Lighthouse metrics: set PSI_API_KEY or set LIGHTHOUSE_MODE=disabled to suppress.
+- No Lighthouse metrics: set PSI_API_KEY.
 - Mongo/Redis connectivity: confirm MONGODB_URI/REDIS_HOST/REDIS_PORT and that containers are running.
 
 ---

@@ -18,7 +18,7 @@ const verifyClerkAuth = async (
     const token = authHeader.replace('Bearer ', '')
 
     const payload = await verifyToken(token, {
-      secretKey   : process.env.CLERK_PEM_PRIVATE_KEY, // or rely on Clerk's default JWKS URL
+      secretKey   : process.env.CLERK_SECRET_KEY, // or rely on Clerk's default JWKS URL
     })
 
     // Attach the user info to the request
