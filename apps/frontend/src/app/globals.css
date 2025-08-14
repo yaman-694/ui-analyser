@@ -10,9 +10,10 @@
 }
 
 @font-face {
-  font-family: 'FuturaPTBook';
+  font-family: 'FuturaPT';
   src: url('/fonts/FuturaPTBook.woff2') format('woff2');
   font-display: swap;
+  font-weight: 400;
 }
 
 @font-face {
@@ -22,9 +23,10 @@
 }
 
 @font-face {
-  font-family: 'FuturaPTDemi';
+  font-family: 'FuturaPT';
   src: url('/fonts/FuturaPTDemi.woff2') format('woff2');
   font-display: swap;
+  font-weight: 500;
 }
 
 @font-face {
@@ -74,7 +76,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-heading: 'PP editorial regular', sans-serif;
-  --font-body: 'FuturaPTBook', sans-serif;
+  --font-body: 'FuturaPT', sans-serif;
   --font-growigh: 'Futura heavy', sans-serif;
   --font-logo: 'FuturaPTDemi', sans-serif;
   --font-jersey: 'Jersey', sans-serif;

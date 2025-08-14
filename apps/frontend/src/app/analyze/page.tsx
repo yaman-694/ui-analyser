@@ -41,7 +41,7 @@ export default function AnalyzePage() {
     window.history.replaceState(null, "", newUrl.toString());
   }, []);
 
- 
+
   useEffect(() => {
     const isValid = urlSchema.safeParse({ url });
     async function performAnalysis() {
@@ -78,17 +78,17 @@ export default function AnalyzePage() {
           toast.success("Analysis completed successfully");
           return;
         }
-        
+
         // For all other URLs, make the actual API call
         if (url) {
           const token = await getToken({ template: "default" }).catch(() => undefined);
           const response = await analyzeWebsite({ url: normalizedUrl }, token ? { token } : undefined);
-          
+
           if (!response?.data?.success) {
             setError(response.data.error);
             return;
           }
-          
+
           setAnalysisResult(response.data.data); // Access the data property from the response
           toast.success("Analysis completed successfully");
         }
@@ -113,12 +113,12 @@ export default function AnalyzePage() {
     router.push('/');
     return null;
   }
-  
-  
+
+
   return (
   <div className="container mx-auto px-4 py-12">
       <h1 className="mt-32 mb-6 text-3xl font-bold text-center text-input">Website Analysis</h1>
-      
+
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-12">
           <div className="w-16 h-16 mb-4 border-4 rounded-full border-t-input border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
@@ -131,7 +131,7 @@ export default function AnalyzePage() {
         <div className="px-4 py-3 mb-6 text-red-700 border border-red-200 rounded-md bg-red-50">
           <p className="font-medium">Error</p>
           <p>{error}</p>
-          <button 
+          <button
             onClick={() => router.push('/')}
             className="px-4 py-2 mt-4 text-white transition-colors bg-red-600 rounded-md hover:bg-red-700"
           >
@@ -143,23 +143,23 @@ export default function AnalyzePage() {
       {!isLoading && !error && analysisResult && (
         <div className="p-6 bg-white rounded-lg shadow-lg">
           <h2 className="mb-4 text-2xl font-semibold">Analysis Results for {analysisResult.url}</h2>
-          
+
           <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-2">
             {/* Performance Metrics */}
-            <div className="p-4 rounded-lg bg-gray-50">
+            <div className="p-4 rounded-lg bg-gray-100">
               <h3 className="mb-3 text-xl font-semibold">Performance Metrics</h3>
               <div className="space-y-2">
-                <p><span className="font-medium">Load Time:</span> {analysisResult.loadTime ? `${analysisResult.loadTime}s` : 'N/A'}</p>
-                <p><span className="font-medium">Performance Score:</span> {analysisResult.performanceScore ? `${analysisResult.performanceScore}/100` : 'N/A'}</p>
-                <p><span className="font-medium">Analyzed:</span> {new Date(analysisResult.timestamp || '').toLocaleString()}</p>
+                <p className='font-medium'><span className="font-normal">Load Time:</span> {analysisResult.loadTime ? `${analysisResult.loadTime}s` : 'N/A'}</p>
+                <p className='font-medium'><span className="font-normal">Performance Score:</span> {analysisResult.performanceScore ? `${analysisResult.performanceScore}/100` : 'N/A'}</p>
+                <p className='text-xs'><span className="">Analyzed:</span> {new Date(analysisResult.timestamp || '').toLocaleString()}</p>
               </div>
             </div>
-            
+
             {/* Issues Found */}
-            <div className="p-4 rounded-lg bg-gray-50">
+            <div className="p-4 rounded-lg bg-gray-100">
               <h3 className="mb-3 text-xl font-semibold">Issues Found</h3>
               {analysisResult.issues && analysisResult.issues.length > 0 ? (
-                <ul className="pl-5 space-y-1 list-disc">
+                <ul className="pl-5 space-y-1 text-lg tracking-wide list-decimal">
                   {analysisResult.issues.map((issue, index) => (
                     <li key={index}>{issue}</li>
                   ))}
@@ -169,14 +169,14 @@ export default function AnalyzePage() {
               )}
             </div>
           </div>
-          
+
           {/* Screenshots */}
           <div className="mt-8">
             <h3 className="mb-4 text-xl font-semibold">Screenshots</h3>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               {/* Desktop Screenshot */}
               <div className="col-span-2 p-4 border border-gray-200 rounded-lg">
-                <h4 className="mb-3 text-lg font-medium">Desktop View</h4> 
+                <h4 className="mb-3 text-lg font-medium">Desktop View</h4>
                 {analysisResult.screenshots?.desktop ? (
                   <div className="relative overflow-hidden rounded-xl border border-gray-300 max-h-[50vh] overflow-y-auto">
                     <Image
@@ -193,7 +193,7 @@ export default function AnalyzePage() {
                   </div>
                 )}
               </div>
-              
+
               {/* Mobile Screenshot */}
               <div className="p-4 border border-gray-200 rounded-lg">
                 <h4 className="mb-3 text-lg font-medium">Mobile View</h4>
@@ -215,7 +215,7 @@ export default function AnalyzePage() {
               </div>
             </div>
           </div>
-          
+
           {/* Raw JSON (Expandable) */}
           <div className="mt-8">
             <details>
